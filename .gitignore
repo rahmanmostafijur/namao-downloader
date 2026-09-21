@@ -9,4 +9,5 @@ android/build/
 android/local.properties
 *.apk
 *.aab
+!/Namao-debug.apk
 .DS_Store

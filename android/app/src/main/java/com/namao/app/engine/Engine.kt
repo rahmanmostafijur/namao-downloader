@@ -116,9 +116,12 @@ object FilenameSanitizer {
 }
 
 /** Why a download failed, so the UI can show an honest, specific message and
- * decide whether an automatic retry is worth attempting. */
+ * decide whether an automatic retry is worth attempting. Named to mirror the
+ * failure taxonomy this app is designed around (extraction vs. network vs.
+ * format vs. storage vs. processing), not just a generic try/catch. */
 enum class FailureKind {
-    NETWORK, TIMEOUT, PERMANENT_UNAVAILABLE, UNSUPPORTED_SOURCE, STORAGE, CONVERSION, CANCELLED, UNKNOWN
+    NETWORK, TIMEOUT, RATE_LIMITED, PERMANENT_UNAVAILABLE, UNSUPPORTED_SOURCE,
+    FORMAT_NOT_AVAILABLE, STORAGE, CONVERSION, CANCELLED, UNKNOWN
 }
 
 object ErrorClassifier {
@@ -127,6 +130,11 @@ object ErrorClassifier {
         val text = (message ?: "").lowercase()
         return when {
             "cancel" in text || "interrupted" in text -> FailureKind.CANCELLED
+            // Checked before the generic network bucket: a 429/"too many
+            // requests" is a distinct condition that deserves a longer
+            // backoff and a message that doesn't imply a broken connection.
+            "429" in text || "too many requests" in text || "rate limit" in text || "rate-limit" in text ->
+                FailureKind.RATE_LIMITED
             "timed out" in text || "timeout" in text -> FailureKind.TIMEOUT
             "unknownhost" in text || "connection reset" in text || "failed to establish" in text ||
                 "network is unreachable" in text || "no address associated" in text ||
@@ -135,27 +143,33 @@ object ErrorClassifier {
                 "age-restricted" in text || "age restricted" in text || "no longer available" in text ||
                 "has been removed" in text || "does not exist" in text || "unavailable" in text ->
                 FailureKind.PERMANENT_UNAVAILABLE
-            "unsupported url" in text || "is not a valid url" in text || "no video formats" in text ->
-                FailureKind.UNSUPPORTED_SOURCE
+            "unsupported url" in text || "is not a valid url" in text -> FailureKind.UNSUPPORTED_SOURCE
+            // The link IS a supported platform, but this specific item has no
+            // usable stream at all (distinct from the platform being unsupported).
+            "no video formats" in text || "requested format not available" in text ->
+                FailureKind.FORMAT_NOT_AVAILABLE
             "enospc" in text || "no space left" in text || "not enough storage" in text -> FailureKind.STORAGE
             "ffmpeg" in text || "postprocess" in text || "conversion" in text -> FailureKind.CONVERSION
             else -> FailureKind.UNKNOWN
         }
     }
 
-    fun isAutoRetryable(kind: FailureKind): Boolean = kind == FailureKind.NETWORK || kind == FailureKind.TIMEOUT
+    fun isAutoRetryable(kind: FailureKind): Boolean =
+        kind == FailureKind.NETWORK || kind == FailureKind.TIMEOUT || kind == FailureKind.RATE_LIMITED
 
     /** User-facing copy — never the raw exception text (Phase 22/23: no stack
      * traces surfaced to normal users). */
     fun userMessage(kind: FailureKind): String = when (kind) {
-        FailureKind.NETWORK -> "Network connection was interrupted. You can retry the download."
+        FailureKind.NETWORK -> "Your connection was interrupted. Check your network and try again."
         FailureKind.TIMEOUT -> "The connection timed out. You can retry the download."
-        FailureKind.PERMANENT_UNAVAILABLE -> "This content cannot be accessed from the provided link. It may be private, deleted, or age-restricted."
-        FailureKind.UNSUPPORTED_SOURCE -> "This link isn't currently supported."
+        FailureKind.RATE_LIMITED -> "This platform is temporarily limiting requests. Please wait a moment and try again."
+        FailureKind.PERMANENT_UNAVAILABLE -> "This content is not accessible through the provided link. It may be private, deleted, or age-restricted."
+        FailureKind.UNSUPPORTED_SOURCE -> "This link cannot be downloaded by the app."
+        FailureKind.FORMAT_NOT_AVAILABLE -> "We couldn't retrieve the available video formats. Please try again."
         FailureKind.STORAGE -> "Not enough storage space is available."
         FailureKind.CONVERSION -> "The video was downloaded, but conversion to the selected format failed."
         FailureKind.CANCELLED -> "Download cancelled."
-        FailureKind.UNKNOWN -> "Download failed. You can retry."
+        FailureKind.UNKNOWN -> "Unable to access this video right now. Please try again."
     }
 }
 

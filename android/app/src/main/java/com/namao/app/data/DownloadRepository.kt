@@ -43,8 +43,10 @@ class DownloadRepository(private val dao: DownloadDao) {
                 qualityLabel = qualityLabel,
                 status = DownloadStatus.QUEUED.name,
                 progressPercent = 0f,
+                etaSeconds = null,
+                storageKind = null,
                 filePath = null,
-                fileTreeUri = null,
+                contentUri = null,
                 fileName = null,
                 fileSizeBytes = null,
                 errorMessage = null,
@@ -62,8 +64,39 @@ class DownloadRepository(private val dao: DownloadDao) {
 
     suspend fun update(entity: DownloadEntity) = dao.update(entity.copy(updatedAt = System.currentTimeMillis()))
 
-    suspend fun updateProgress(id: String, status: DownloadStatus, progress: Float) =
-        dao.updateProgress(id, status.name, progress, System.currentTimeMillis())
+    suspend fun updateProgress(id: String, status: DownloadStatus, progress: Float, etaSeconds: Long? = null) =
+        dao.updateProgress(id, status.name, progress, etaSeconds, System.currentTimeMillis())
+
+    suspend fun markCompleted(
+        id: String,
+        storageKind: String,
+        filePath: String?,
+        contentUri: String?,
+        fileName: String,
+        fileSizeBytes: Long,
+    ) {
+        val now = System.currentTimeMillis()
+        dao.markCompleted(
+            id = id,
+            status = DownloadStatus.COMPLETED.name,
+            storageKind = storageKind,
+            filePath = filePath,
+            contentUri = contentUri,
+            fileName = fileName,
+            fileSizeBytes = fileSizeBytes,
+            completedAt = now,
+            updatedAt = now,
+        )
+    }
+
+    suspend fun markFailed(id: String, userMessage: String, failureKind: String) =
+        dao.markFailed(id, DownloadStatus.FAILED.name, userMessage, failureKind, System.currentTimeMillis())
+
+    suspend fun markCancelled(id: String) =
+        dao.updateProgress(id, DownloadStatus.CANCELLED.name, 0f, null, System.currentTimeMillis())
+
+    suspend fun markPaused(id: String, progress: Float) =
+        dao.updateProgress(id, DownloadStatus.PAUSED.name, progress, null, System.currentTimeMillis())
 
     /** Resets a finished job back into the queue — used for both "Retry"
      * (failed/cancelled) and "Redownload" (completed) from the history screen. */
@@ -90,6 +123,23 @@ class DownloadRepository(private val dao: DownloadDao) {
     suspend fun countRunning(): Int = dao.countRunning()
 
     suspend fun getQueuedOnce(): List<DownloadEntity> = dao.getQueuedOnce()
+
+    /** Resets any row left in PREPARING/DOWNLOADING/PROCESSING back to QUEUED.
+     * Only meaningful right after the service (re)starts, when the caller's
+     * running-jobs map is guaranteed empty — such a row can only be orphaned
+     * leftover state from a process that was killed mid-download, not a job
+     * actually in flight (Phase 7/13: no status should be able to get stuck
+     * forever). The temp file, if any survived, is left in place so the next
+     * attempt can resume via yt-dlp's own byte-range support. */
+    suspend fun reconcileInterruptedJobs() {
+        val stuck = dao.getByStatusesOnce(
+            listOf(DownloadStatus.PREPARING.name, DownloadStatus.DOWNLOADING.name, DownloadStatus.PROCESSING.name)
+        )
+        val now = System.currentTimeMillis()
+        for (entity in stuck) {
+            dao.update(entity.copy(status = DownloadStatus.QUEUED.name, updatedAt = now))
+        }
+    }
 
     suspend fun markFileMissing(id: String, missing: Boolean) = dao.updateFileMissing(id, missing)
 

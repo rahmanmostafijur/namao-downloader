@@ -63,6 +63,9 @@ android {
         // occasionally ship duplicate license/metadata files under the
         // same path, which would otherwise fail the build.
         resources.excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*")
+        // Required alongside android:extractNativeLibs="true" (needed for the
+        // bundled Python/ffmpeg native libs) — AGP warns without it.
+        jniLibs.useLegacyPackaging = true
     }
 }
 

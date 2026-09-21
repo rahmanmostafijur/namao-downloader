@@ -50,8 +50,21 @@ data class DownloadEntity(
     val qualityLabel: String,
     val status: String,
     val progressPercent: Float,
+    // Real ETA (seconds) as reported by yt-dlp's own progress callback, or
+    // null when unknown — never a fabricated/estimated value (Phase 20:
+    // "Do not show fake speed or fake ETA").
+    val etaSeconds: Long?,
+    // How/where the finished file is stored, so it can be opened, shared,
+    // renamed, or deleted correctly later:
+    //  - "SAF_TREE": contentUri is a tree Uri (user-chosen folder); look the
+    //    file up inside it by fileName via DocumentFile.
+    //  - "MEDIA_STORE": contentUri is a single MediaStore item Uri, directly
+    //    usable for view/share/delete.
+    //  - "PLAIN_FILE": filePath is an absolute path (API<=28 public storage,
+    //    or an app-specific fallback); needs a FileProvider Uri to share/view.
+    val storageKind: String?,
     val filePath: String?,
-    val fileTreeUri: String?,
+    val contentUri: String?,
     val fileName: String?,
     val fileSizeBytes: Long?,
     val errorMessage: String?,
@@ -87,6 +100,9 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY queuePosition ASC")
     suspend fun getQueuedOnce(): List<DownloadEntity>
 
+    @Query("SELECT * FROM downloads WHERE status IN (:statuses)")
+    suspend fun getByStatusesOnce(statuses: List<String>): List<DownloadEntity>
+
     @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('PREPARING', 'DOWNLOADING', 'PROCESSING')")
     suspend fun countRunning(): Int
 
@@ -97,9 +113,9 @@ interface DownloadDao {
     suspend fun clearHistory()
 
     @Query(
-        "UPDATE downloads SET status = :status, progressPercent = :progress, updatedAt = :updatedAt WHERE id = :id"
+        "UPDATE downloads SET status = :status, progressPercent = :progress, etaSeconds = :etaSeconds, updatedAt = :updatedAt WHERE id = :id"
     )
-    suspend fun updateProgress(id: String, status: String, progress: Float, updatedAt: Long)
+    suspend fun updateProgress(id: String, status: String, progress: Float, etaSeconds: Long?, updatedAt: Long)
 
     @Query("UPDATE downloads SET fileMissing = :missing WHERE id = :id")
     suspend fun updateFileMissing(id: String, missing: Boolean)
@@ -107,8 +123,37 @@ interface DownloadDao {
     @Query("UPDATE downloads SET fileName = :fileName WHERE id = :id")
     suspend fun updateFileName(id: String, fileName: String)
 
+    @Query(
+        """UPDATE downloads SET status = :status, storageKind = :storageKind, filePath = :filePath,
+           contentUri = :contentUri, fileName = :fileName, fileSizeBytes = :fileSizeBytes,
+           completedAt = :completedAt, updatedAt = :updatedAt, progressPercent = 100
+           WHERE id = :id"""
+    )
+    suspend fun markCompleted(
+        id: String,
+        status: String,
+        storageKind: String,
+        filePath: String?,
+        contentUri: String?,
+        fileName: String,
+        fileSizeBytes: Long,
+        completedAt: Long,
+        updatedAt: Long,
+    )
+
+    @Query(
+        "UPDATE downloads SET status = :status, errorMessage = :errorMessage, failureKind = :failureKind, updatedAt = :updatedAt WHERE id = :id"
+    )
+    suspend fun markFailed(id: String, status: String, errorMessage: String, failureKind: String, updatedAt: Long)
+
     @Query("SELECT MAX(queuePosition) FROM downloads")
     suspend fun maxQueuePosition(): Long?
+}
+
+object StorageKind {
+    const val SAF_TREE = "SAF_TREE"
+    const val MEDIA_STORE = "MEDIA_STORE"
+    const val PLAIN_FILE = "PLAIN_FILE"
 }
 
 @Database(entities = [DownloadEntity::class], version = 1, exportSchema = false)

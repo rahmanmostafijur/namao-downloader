@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only used for the pre-API 29 legacy fallback (FileStore.PLAIN_FILE),
+         where the finished file lives in the public Downloads/Namao folder. -->
+    <external-path name="downloads" path="Download/Namao/" />
+</paths>

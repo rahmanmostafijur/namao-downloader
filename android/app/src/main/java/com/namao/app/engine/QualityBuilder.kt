@@ -60,8 +60,8 @@ object QualityBuilder {
         return MediaInfo(
             platform = platform,
             title = info.title?.takeIf { it.isNotBlank() } ?: "Untitled",
-            uploader = info.uploader?.takeIf { it.isNotBlank() } ?: (info.channel ?: ""),
-            durationSeconds = info.duration,
+            uploader = info.uploader?.takeIf { it.isNotBlank() } ?: "",
+            durationSeconds = info.duration.toLong(),
             thumbnailUrl = info.thumbnail,
             qualities = qualities,
         )

@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -82,6 +83,34 @@ def require_platform(url: str) -> str:
 
 def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
+
+
+# Network hiccups (DNS blip, connection reset, timeout) shouldn't immediately
+# fail a download — only errors that look permanent (private/removed/
+# unsupported) skip straight to failure.
+_TRANSIENT_ERROR_MARKERS = (
+    "timed out", "timeout", "connection reset", "temporary failure",
+    "name or service not known", "network is unreachable", "econnreset",
+    "failed to establish a new connection", "remote end closed connection",
+)
+
+
+def _is_transient_download_error(exc: DownloadError) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _download_with_retry(ydl: "yt_dlp.YoutubeDL", url: str, max_attempts: int = 3) -> None:
+    delay_seconds = 1.5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            ydl.download([url])
+            return
+        except DownloadError as e:
+            if attempt >= max_attempts or not _is_transient_download_error(e):
+                raise
+            time.sleep(delay_seconds)
+            delay_seconds *= 3
 
 
 def format_size(num_bytes: float | None) -> str | None:
@@ -269,7 +298,7 @@ def download(url: str = Query(...), quality: str = Query(...)):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            _download_with_retry(ydl, url)
     except DownloadError as e:
         shutil.rmtree(tempdir, ignore_errors=True)
         raise HTTPException(
