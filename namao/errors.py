@@ -91,7 +91,7 @@ _MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.METADATA_FAILED: "Couldn't read this video's information.",
     ErrorCode.DOWNLOAD_FAILED: "The download failed.",
     ErrorCode.CANCELLED: "The download was cancelled.",
-    ErrorCode.INTERRUPTED: "The download was interrupted by a server restart. Start it again.",
+    ErrorCode.INTERRUPTED: "The download was interrupted. Start it again.",
     ErrorCode.NOT_FOUND: "Not found.",
     ErrorCode.EXPIRED: "This download has expired and its file was deleted. Start it again.",
     ErrorCode.INVALID_REQUEST: "The request was malformed.",

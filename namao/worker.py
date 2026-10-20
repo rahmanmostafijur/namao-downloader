@@ -11,6 +11,9 @@ Threads
                        cleanup cannot make healthy jobs look dead.
   * 1 maintenance thread reaps jobs of dead workers and sweeps expired files.
 
+Drain mode: while `<data dir>/DRAIN` exists no new job is claimed, so a deploy or
+engine update can wait for running jobs to finish (see `python -m namao.ops`).
+
 A job whose thread has run past its deadline plus a grace period stops being
 heartbeated, so it is reaped and the API stops reporting it as active even if
 the thread is stuck somewhere no cancel/timeout hook can reach (e.g. FFmpeg).
@@ -102,6 +105,9 @@ class Worker:
         runner = JobRunner(self._settings, self._store, self._engine, self.worker_id,
                            is_stopping=self._stop.is_set)
         while not self._stop.is_set():
+            if self._settings.drain_file.exists():  # operator is updating: finish, don't start
+                self._stop.wait(self._settings.poll_interval_seconds)
+                continue
             try:
                 job = self._store.claim_next(self.worker_id)
             except Exception:  # noqa: BLE001 - keep the loop alive; DB may be briefly locked

@@ -36,7 +36,14 @@ def test_progressive_stream_needs_no_merge():
 
 
 def test_unknown_sizes_stay_unknown():
-    assert build_format_options(meta(fmt(360)))[0].size_bytes is None
+    assert build_format_options(meta(fmt(360, tbr=None)))[0].size_bytes is None
+
+
+def test_missing_sizes_are_estimated_from_bitrate_and_flagged_as_estimates():
+    option = build_format_options(meta(fmt(360, tbr=800)))[0]  # 800 kbit/s x 100 s
+    assert option.size_bytes == 800 * 125 * 100 and option.size_estimated is True
+    exact = build_format_options(meta(fmt(360, tbr=800, size=5_000)))[0]
+    assert exact.size_bytes == 5_000 and exact.size_estimated is False
 
 
 def test_high_fps_is_shown_in_the_label():

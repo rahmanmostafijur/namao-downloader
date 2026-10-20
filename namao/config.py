@@ -109,6 +109,11 @@ class Settings:
         return self.data_dir / "namao.db"
 
     @property
+    def drain_file(self) -> Path:
+        """While this file exists workers finish running jobs but claim no new ones."""
+        return self.data_dir / "DRAIN"
+
+    @property
     def jobs_dir(self) -> Path:
         return self.data_dir / "jobs"
 

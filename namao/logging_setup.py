@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import time
 
@@ -34,7 +35,8 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str, ensure_ascii=False)
 
 
-def configure_logging(level: str = "INFO") -> None:
+def configure_logging(level: str | None = None) -> None:
+    level = level or os.environ.get("NAMAO_LOG_LEVEL", "INFO")
     root = logging.getLogger()
     if any(getattr(h, "_namao", False) for h in root.handlers):
         return

@@ -76,7 +76,8 @@ class FormatOption(BaseModel):
     kind: str = Field(description="video | audio")
     height: int | None = None
     note: str = ""
-    size_bytes: int | None = Field(default=None, description="Estimate; null when unknown")
+    size_bytes: int | None = Field(default=None, description="Approximate size; null when unknown")
+    size_estimated: bool = Field(default=False, description="True when derived from bitrate x duration")
     needs_merge: bool = False
 
 

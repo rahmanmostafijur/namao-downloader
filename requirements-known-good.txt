@@ -1,0 +1,4 @@
+# Last promoted-and-tested engine pins. Restore with: python scripts/engine_update.py rollback
+# Recorded 2026-10-20
+yt-dlp[default]==2026.8.19
+yt-dlp-ejs==0.8.0

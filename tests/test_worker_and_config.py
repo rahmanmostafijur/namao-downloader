@@ -167,3 +167,55 @@ def test_a_binary_planted_in_the_working_directory_is_never_used(tmp_path, monke
     monkeypatch.setenv("PATH", str(tmp_path / "elsewhere"))
     assert find_executable("ffmpeg", Settings()) is None
     assert find_executable("ffmpeg", Settings(bin_dir=tmp_path)) is not None  # explicit opt-in works
+
+
+# ------------------------------------------------------------- drain / ops
+
+def test_drained_workers_finish_running_jobs_but_claim_nothing_new(settings):
+    from namao import ops
+    settings.ensure_dirs()
+    store = JobStore(settings)
+    started = []
+    release = __import__("threading").Event()
+
+    def slow(request, on_progress, should_cancel, deadline):
+        started.append(True)
+        release.wait(10)
+        return writes_file()(request, on_progress, should_cancel, deadline)
+
+    engine = FakeEngine(settings)
+    engine.default_behavior = slow
+    running, _ = store.create_job(url=GOOD_URL, platform="youtube", quality="best", max_attempts=1)
+    worker = Worker(settings, store=store, engine=engine)
+    worker.start()
+    try:
+        wait_for(lambda: started)
+        settings.drain_file.write_text("x")
+        waiting, _ = store.create_job(url=GOOD_URL, platform="youtube", quality="720", max_attempts=1)
+        time.sleep(0.5)
+        assert store.get(waiting.id).status == JobStatus.QUEUED, "a drained worker must not claim new jobs"
+        assert ops.snapshot(settings, store)["draining"] is True
+        release.set()
+        wait_for(lambda: store.get(running.id).status == JobStatus.COMPLETED, timeout=15)
+        time.sleep(0.4)
+        assert store.get(waiting.id).status == JobStatus.QUEUED
+        ops.resume(settings)
+        wait_for(lambda: store.get(waiting.id).status == JobStatus.COMPLETED, timeout=15)
+    finally:
+        worker.stop()
+
+
+def test_ops_drain_reports_whether_active_jobs_remain(settings):
+    from namao import ops
+    settings.ensure_dirs()
+    store = JobStore(settings)
+    assert ops.drain(settings, store, wait_seconds=0.2, poll=0.05) == 0 and settings.drain_file.exists()
+    job, _ = store.create_job(url=GOOD_URL, platform="youtube", quality="best", max_attempts=1)
+    store.claim_next("w1")  # now actively running
+    assert ops.drain(settings, store, wait_seconds=0.3, poll=0.05) == 2
+    snap = ops.snapshot(settings, store)
+    assert snap["active_jobs"] == 1 and snap["draining"] is True
+    store.update(job.id, "w1", status=JobStatus.COMPLETED)
+    assert ops.drain(settings, store, wait_seconds=0.3, poll=0.05) == 0
+    ops.resume(settings)
+    assert not settings.drain_file.exists()

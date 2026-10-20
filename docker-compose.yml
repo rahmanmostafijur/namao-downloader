@@ -1,0 +1,86 @@
+# Namao: API + worker sharing one persistent volume (SQLite job state + temporary job files).
+#
+#   cp .env.example .env        # review the limits
+#   docker compose up -d --build
+#   docker compose ps           # api becomes healthy; then check /health/ready
+#
+# Public deployment with automatic TLS:   docker compose --profile public up -d
+# (set NAMAO_DOMAIN in .env; the API port is then not published to the host)
+
+x-namao: &namao
+  build:
+    context: .
+  image: namao:local
+  env_file: .env
+  environment:
+    NAMAO_DATA_DIR: /data
+  volumes:
+    - namao-data:/data
+  # Hardening: nothing here needs root, extra capabilities, or a writable image.
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *namao
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${NAMAO_BIND:-127.0.0.1}:${NAMAO_PORT:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    <<: *namao
+    command: ["python", "-m", "namao.worker"]
+    # Time for running jobs to be marked `interrupted` and cleaned up on `docker compose stop`.
+    stop_grace_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "${NAMAO_WORKER_CPUS:-2.0}"
+          memory: "${NAMAO_WORKER_MEMORY:-1G}"
+    healthcheck:
+      # Liveness of the worker process itself; readiness (incl. worker heartbeat) is /health/ready on the API.
+      test: ["CMD", "python", "-c", "import sqlite3,time,sys,os; c=sqlite3.connect(os.environ['NAMAO_DATA_DIR']+'/namao.db'); n=c.execute('select count(*) from workers where heartbeat_at > ?',(time.time()-60,)).fetchone()[0]; sys.exit(0 if n else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Optional TLS reverse proxy (Caddy obtains and renews certificates automatically).
+  proxy:
+    image: caddy:2.8-alpine
+    profiles: ["public"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # `localhost` = Caddy's local test certificate; set a real domain in .env for public TLS.
+      NAMAO_DOMAIN: ${NAMAO_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  namao-data:
+  caddy-data:
+  caddy-config:
