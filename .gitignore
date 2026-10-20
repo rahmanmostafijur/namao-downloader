@@ -11,3 +11,13 @@ android/local.properties
 *.aab
 !/Namao.apk
 .DS_Store
+.claude
+
+# Namao runtime state and secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+.coverage
