@@ -100,14 +100,25 @@ def known_good_text(ytdlp_version: str, ejs_version: str, today: date | None = N
 
 # --------------------------------------------------------------------- network
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # PyPI JSON endpoints never need to redirect
+        return None
+
+
 def fetch_json(url: str) -> dict:
     if not url.startswith("https://pypi.org/"):
         raise ValueError("refusing to fetch a non-PyPI URL")
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 - fixed https host
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(url, timeout=30) as response:
         return json.load(response)
 
 
+_VERSION_FORMAT = re.compile(r"^[0-9][0-9A-Za-z.]*$")
+
+
 def describe_release(version: str) -> dict:
+    if not _VERSION_FORMAT.match(version):
+        raise ValueError(f"not a plausible version string: {version!r}")
     data = fetch_json(PYPI_RELEASE.format(name="yt-dlp", version=version))
     ejs = ejs_requirement(data["info"].get("requires_dist"))
     if ejs is None:

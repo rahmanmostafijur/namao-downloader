@@ -130,8 +130,7 @@ function Main({ settings, onEditSettings }: { settings: Settings; onEditSettings
     const shared = extractVideoUrl(shareIntent.webUrl ?? shareIntent.text);
     resetShareIntent();
     if (shared) {
-      setUrl(shared);
-      void fetchMetadata(shared);
+      setUrl(shared); // fill the field only: the user confirms with Fetch (another app must not trigger server requests)
     } else {
       setError("That share didn't contain a supported video link.");
     }

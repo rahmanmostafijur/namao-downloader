@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,25 +35,22 @@ from .errors import ErrorCode, NamaoError
 from .jobs.store import JobRecord, JobStore
 from .models import JobStatus
 
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 DESKTOP_HEADER = "x-namao-desktop"
+DESKTOP_COOKIE = "namao_desktop"
 _MAX_PATH_CHARS = 500
+_RESERVED_TOP_LEVEL = {"appdata", "library", "application data", "local settings"}
 
 
 def default_output_dir() -> Path:
     return Path.home() / "Downloads" / "Namao"
 
 
+_LOCAL_HOST_RE = re.compile(r"(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?")
+
+
 def host_is_local(host_header: str | None) -> bool:
-    """True for Host headers naming this machine (any port); False for anything else."""
-    if not host_header:
-        return False
-    host = host_header.strip().lower()
-    if host.startswith("["):  # [::1]:8000
-        host = host.split("]")[0] + "]"
-    else:
-        host = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
-    return host in LOCAL_HOSTS
+    """True only for a Host header that names this machine (optional numeric port)."""
+    return bool(host_header) and _LOCAL_HOST_RE.fullmatch(host_header.strip().lower()) is not None
 
 
 def validate_output_dir(raw: str, *, home: Path | None = None) -> Path:
@@ -69,6 +67,9 @@ def validate_output_dir(raw: str, *, home: Path | None = None) -> Path:
     relative = resolved.relative_to(base)
     if any(part.startswith(".") for part in relative.parts):
         raise NamaoError(ErrorCode.INVALID_REQUEST, "hidden folders are not allowed")
+    # Application-support areas (Windows AppData incl. Startup, macOS Library) are not download folders.
+    if relative.parts[0].lower() in _RESERVED_TOP_LEVEL:
+        raise NamaoError(ErrorCode.INVALID_REQUEST, "that folder is reserved for applications")
     return resolved
 
 
@@ -85,6 +86,8 @@ class Preferences:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 data = {}
+        if not isinstance(data, dict):
+            data = {}
         output = data.get("output_dir")
         try:
             output_dir = str(validate_output_dir(output)) if output else str(default_output_dir())
@@ -114,7 +117,7 @@ def unique_destination(folder: Path, filename: str) -> Path:
     stem, suffix = Path(filename).stem, Path(filename).suffix
     candidate = folder / filename
     counter = 1
-    while candidate.exists():
+    while os.path.lexists(candidate):  # lexists: a dangling symlink also occupies the name
         candidate = folder / f"{stem} ({counter}){suffix}"
         counter += 1
     return candidate
@@ -134,6 +137,10 @@ def copy_without_overwriting(source: Path, folder: Path, filename: str) -> Path:
     temp = Path(temp_name)
     try:
         shutil.copyfile(source, temp)
+        if os.name != "nt":  # mkstemp creates 0600; saved media should follow the user's umask
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(temp, 0o666 & ~umask)
         for _ in range(1000):
             destination = unique_destination(folder, filename)
             try:
@@ -142,14 +149,17 @@ def copy_without_overwriting(source: Path, folder: Path, filename: str) -> Path:
             except FileExistsError:
                 continue  # lost the race for this name
             except OSError:  # no hard links (FAT/exFAT, some network shares)
+                created = False
                 try:
                     with open(temp, "rb") as src, open(destination, "xb") as dst:
+                        created = True
                         shutil.copyfileobj(src, dst)
                     return destination
                 except FileExistsError:
                     continue
                 except BaseException:
-                    destination.unlink(missing_ok=True)
+                    if created:  # never delete something we did not create
+                        destination.unlink(missing_ok=True)
                     raise
         raise NamaoError(ErrorCode.CONFLICT, "could not find a free file name")
     finally:

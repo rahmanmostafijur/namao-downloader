@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:  # lets a maintainer run CI on bot-created PRs (GITHUB_TOKEN PRs don't trigger it)
 
 permissions:
   contents: read
@@ -17,8 +18,10 @@ jobs:
     name: backend + web tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -34,7 +37,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Python tests (real yt-dlp + FFmpeg against a local DASH server; no internet needed)
         run: python -m pytest -p no:logging --cov=namao --cov-fail-under=80 -rs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
       - name: Web client tests
@@ -44,7 +47,9 @@ jobs:
     name: image builds and passes readiness
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Build (the Dockerfile verifies Deno, FFmpeg, FFprobe and yt-dlp-ejs)
         run: docker build -t namao:ci .
       - name: Start single-process mode and wait for /health/ready
@@ -67,8 +72,10 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: FFmpeg
@@ -88,7 +95,7 @@ jobs:
         run: |
           exe=dist/Namao; [ -f dist/Namao.exe ] && exe=dist/Namao.exe
           "$exe" --check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: namao-${{ runner.os }}
           path: dist/Namao*
@@ -100,8 +107,10 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm

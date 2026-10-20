@@ -5,7 +5,8 @@
 #   docker compose ps           # api becomes healthy; then check /health/ready
 #
 # Public deployment with automatic TLS:   docker compose --profile public up -d
-# (set NAMAO_DOMAIN in .env; the API port is then not published to the host)
+# (set NAMAO_DOMAIN, NAMAO_TRUST_PROXY=1 and NAMAO_TRUSTED_PROXIES=1 in .env; the API itself stays bound to
+# 127.0.0.1 on the host, only the proxy listens on 80/443. Set NAMAO_API_KEY or put auth in front for a public service.)
 
 x-namao: &namao
   build:

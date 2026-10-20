@@ -209,13 +209,13 @@ def test_ops_drain_reports_whether_active_jobs_remain(settings):
     from namao import ops
     settings.ensure_dirs()
     store = JobStore(settings)
-    assert ops.drain(settings, store, wait_seconds=0.2, poll=0.05) == 0 and settings.drain_file.exists()
+    assert ops.drain(settings, store, wait_seconds=0.5, poll=0.05, grace=0.1) == 0 and settings.drain_file.exists()
     job, _ = store.create_job(url=GOOD_URL, platform="youtube", quality="best", max_attempts=1)
     store.claim_next("w1")  # now actively running
-    assert ops.drain(settings, store, wait_seconds=0.3, poll=0.05) == 2
+    assert ops.drain(settings, store, wait_seconds=0.6, poll=0.05, grace=0.1) == 2
     snap = ops.snapshot(settings, store)
     assert snap["active_jobs"] == 1 and snap["draining"] is True
     store.update(job.id, "w1", status=JobStatus.COMPLETED)
-    assert ops.drain(settings, store, wait_seconds=0.3, poll=0.05) == 0
+    assert ops.drain(settings, store, wait_seconds=0.6, poll=0.05, grace=0.1) == 0
     ops.resume(settings)
     assert not settings.drain_file.exists()

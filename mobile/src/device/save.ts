@@ -23,19 +23,38 @@ export async function downloadFinishedFile(
   signal?: AbortSignal,
 ): Promise<File> {
   if (!job.result) throw new Error("This download isn't ready yet.");
+  const expectedSize = job.result.size_bytes;
   const request = api.fileRequest(job.id);
-  const destination = new File(Paths.cache, safeLocalName(job.result.filename, job.id));
-  if (destination.exists) return destination; // fetched earlier (e.g. saved, then shared)
+  const name = safeLocalName(job.result.filename, job.id);
 
-  const task = File.createDownloadTask(request.url, destination, {
-    headers: request.headers,
-    sessionType: "background",
-    signal,
-    onProgress: (progress) => onProgress?.(progress.bytesWritten, progress.totalBytes),
-  });
-  const file = await task.downloadAsync();
-  if (!file) throw new Error("The transfer was paused before it finished.");
-  return file;
+  // A file left by an earlier attempt only counts if it is complete: on Android a failed or
+  // interrupted transfer can leave a partial file behind.
+  const finalFile = new File(Paths.cache, name);
+  if (finalFile.exists) {
+    if (finalFile.size === expectedSize) return finalFile;
+    discardLocalCopy(finalFile);
+  }
+
+  const partial = new File(Paths.cache, `${name}.part`);
+  discardLocalCopy(partial);
+  try {
+    const task = File.createDownloadTask(request.url, partial, {
+      headers: request.headers,
+      sessionType: "background",
+      signal,
+      onProgress: (progress) => onProgress?.(progress.bytesWritten, progress.totalBytes),
+    });
+    const downloaded = await task.downloadAsync();
+    if (!downloaded) throw new Error("The transfer was paused before it finished.");
+    if (partial.size !== expectedSize) {
+      throw new Error("The file didn't transfer completely. Please try again.");
+    }
+    await partial.move(finalFile); // only a complete file ever gets its final name
+    return finalFile;
+  } catch (error) {
+    discardLocalCopy(partial);
+    throw error;
+  }
 }
 
 /** Save into the device's media library (Photos on iOS, MediaStore on Android). */

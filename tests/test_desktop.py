@@ -185,3 +185,89 @@ def test_open_folder_opens_only_the_configured_output_folder(env):
     assert env.opened[0].name == "Namao" and env.home in env.opened[0].parents
     assert env.client.post(f"{BASE}/open-folder", headers=HDR, json={"path": "/etc"}).status_code == 200
     assert all(p.name == "Namao" for p in env.opened), "a client-supplied path is ignored"
+
+
+# ------------------------------------------------------------ per-user token
+
+@pytest.fixture()
+def secured(settings, home, monkeypatch):
+    monkeypatch.setattr("namao.security.socket.getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("142.250.72.14", 0))])
+    settings = settings.with_overrides(desktop_mode=True, desktop_token="t" * 24)
+    settings.ensure_dirs()
+    app = create_app(settings, engine=FakeEngine(settings), store=JobStore(settings))
+    with TestClient(app, base_url="http://127.0.0.1:8000", follow_redirects=False) as client:
+        yield client
+
+
+def test_without_the_launcher_token_nothing_but_liveness_is_reachable(secured):
+    assert secured.get("/health/live").status_code == 200
+    for path in ("/", "/app.js", "/health/ready", "/api/v1/desktop/preferences"):
+        assert secured.get(path, headers=HDR).status_code == 403, path
+    assert secured.get("/?t=wrong").status_code == 403
+
+
+def test_the_launcher_token_becomes_an_httponly_strict_cookie_and_leaves_the_url(secured):
+    first = secured.get("/?t=" + "t" * 24)
+    assert first.status_code == 303 and first.headers["location"] == "/"
+    cookie = first.headers["set-cookie"].lower()
+    assert "namao_desktop=" in cookie and "httponly" in cookie and "samesite=strict" in cookie
+    assert secured.get("/").status_code == 200  # the client now carries the cookie
+    assert secured.get("/api/v1/desktop/preferences", headers=HDR).status_code == 200
+
+
+def test_a_malformed_or_rewritten_cookie_is_refused(secured):
+    secured.cookies.set("namao_desktop", "x" * 24)
+    assert secured.get("/").status_code == 403
+
+
+def test_launcher_token_is_private_stable_and_used_in_the_ui_url(tmp_path, monkeypatch):
+    import importlib
+    launcher = importlib.import_module("launcher")
+    first = launcher.load_or_create_token(tmp_path)
+    assert len(first) >= 20 and launcher.load_or_create_token(tmp_path) == first
+    monkeypatch.setenv("NAMAO_DESKTOP_TOKEN", first)
+    assert launcher.ui_url(8123) == f"http://127.0.0.1:8123/?t={first}"
+
+
+# -------------------------------------------------- review follow-ups
+
+@pytest.mark.parametrize("host", ["[::1]junk", "localhost:notaport", "localhost:", "127.0.0.1.", "localhost.",
+                                  "localhost:99999999", "127.0.0.1:80:80", "local host"])
+def test_host_header_regex_is_strict(host):
+    assert desktop.host_is_local(host) is False
+
+
+def test_application_support_folders_are_not_valid_download_folders(home):
+    for reserved in ("AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup", "appdata/local/x",
+                     "Library/LaunchAgents", "library"):
+        with pytest.raises(NamaoError):
+            desktop.validate_output_dir(str(home / reserved))
+
+
+def test_a_non_object_preferences_file_falls_back_to_defaults(env):
+    (env.settings.data_dir / "preferences.json").write_text("[]")
+    response = env.client.get(f"{BASE}/preferences", headers=HDR)
+    assert response.status_code == 200 and response.json()["output_dir"].endswith("Namao")
+
+
+def test_a_dangling_symlink_occupies_its_name(tmp_path):
+    folder = tmp_path / "out"
+    folder.mkdir()
+    try:
+        (folder / "Clip.mp4").symlink_to(tmp_path / "does-not-exist")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    assert desktop.unique_destination(folder, "Clip.mp4").name == "Clip (1).mp4"
+
+
+def test_the_no_hardlink_fallback_never_deletes_a_file_it_did_not_create(tmp_path, monkeypatch):
+    source = tmp_path / "src.mp4"
+    source.write_bytes(b"d" * 2048)
+    folder = tmp_path / "out"
+    folder.mkdir()
+    precious = folder / "Clip.mp4"
+    precious.write_bytes(b"MINE")
+    monkeypatch.setattr(desktop.os, "link", lambda *a, **k: (_ for _ in ()).throw(OSError("no hard links")))
+    saved = desktop.copy_without_overwriting(source, folder, "Clip.mp4")
+    assert saved.name == "Clip (1).mp4" and precious.read_bytes() == b"MINE"
+    assert not any(p.name.startswith(".namao-") for p in folder.iterdir())

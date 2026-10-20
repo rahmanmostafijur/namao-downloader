@@ -35,13 +35,20 @@ def snapshot(settings: Settings, store: JobStore) -> dict:
     }
 
 
-def drain(settings: Settings, store: JobStore, wait_seconds: float, poll: float = 2.0) -> int:
+def drain(settings: Settings, store: JobStore, wait_seconds: float, poll: float = 2.0, grace: float = 3.0) -> int:
     settings.ensure_dirs()
     settings.drain_file.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
     deadline = time.monotonic() + wait_seconds
+    quiet_since: float | None = None
     while True:
         if snapshot(settings, store)["active_jobs"] == 0:
-            return 0
+            # A worker that passed its drain check just before the marker appeared may still claim one job:
+            # require the system to stay idle for a short grace period before reporting success.
+            quiet_since = quiet_since if quiet_since is not None else time.monotonic()
+            if time.monotonic() - quiet_since >= grace:
+                return 0
+        else:
+            quiet_since = None
         if time.monotonic() >= deadline:
             return 2
         time.sleep(poll)

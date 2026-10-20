@@ -26,14 +26,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import __version__
 from ..config import Settings, load_settings
-from ..desktop import build_desktop_router, host_is_local
+from ..desktop import DESKTOP_COOKIE, build_desktop_router, host_is_local
 from ..engine.base import DownloadEngine, MediaMetadata
 from ..engine.formats import build_format_options
 from ..engine.ytdlp import YtDlpEngine
@@ -272,6 +272,17 @@ def create_app(
             # DNS-rebinding defence: a page on evil.example resolving to 127.0.0.1 still sends Host: evil.example.
             if not host_is_local(request.headers.get("host")):
                 return fail(NamaoError(ErrorCode.UNAUTHORIZED), 403)
+            token = settings.desktop_token
+            if token and request.url.path != "/health/live":  # liveness stays open for the launcher probe
+                cookie = request.cookies.get(DESKTOP_COOKIE, "")
+                if not secrets.compare_digest(cookie.encode(), token.encode()):
+                    offered = request.query_params.get("t", "")
+                    if offered and secrets.compare_digest(offered.encode(), token.encode()):
+                        # First visit from the launcher: remember it in a cookie and drop the secret from the URL.
+                        redirect = RedirectResponse(request.url.path or "/", status_code=303)
+                        redirect.set_cookie(DESKTOP_COOKIE, token, httponly=True, samesite="strict", path="/")
+                        return redirect
+                    return fail(NamaoError(ErrorCode.UNAUTHORIZED), 403)
             return await call_next(request)
 
     @app.exception_handler(NamaoError)
@@ -503,8 +514,11 @@ def create_app(
         body = {"status": "ready" if healthy else "degraded", "checks": checks}
         if diagnostics.problems:
             body["problems"] = list(diagnostics.problems)
-        if diagnostics.warnings:
-            body["warnings"] = list(diagnostics.warnings)
+        warnings = list(diagnostics.warnings)
+        if settings.drain_file.exists():
+            warnings.append("drain mode is on: workers are not claiming new jobs (python -m namao.ops resume)")
+        if warnings:
+            body["warnings"] = warnings
         return JSONResponse(body, status_code=200 if healthy else 503)
 
     # --------------------------------------------------------------- static

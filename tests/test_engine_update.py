@@ -83,6 +83,12 @@ def test_promote_saves_the_previous_pins_and_rollback_restores_them(tmp_path, mo
     assert engine_update.cmd_promote(type("A", (), {"version": "2026.8.19"})()) == 0  # already pinned: no-op
 
 
+def test_version_strings_must_look_like_versions(monkeypatch):
+    for bad in ("1.0\1", "../x", "1.0; rm -rf /", "", "v1", "1 .0"):
+        with pytest.raises(ValueError):
+            engine_update.describe_release(bad)
+
+
 def test_only_pypi_https_urls_are_fetched():
     with pytest.raises(ValueError):
         engine_update.fetch_json("http://pypi.org/pypi/yt-dlp/json")

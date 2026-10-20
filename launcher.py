@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import socket
 import sys
 import threading
@@ -71,6 +72,23 @@ def namao_running_on(port: int) -> bool:
         return False
 
 
+def load_or_create_token(data_dir: Path) -> str:
+    """A secret kept in the user's own data folder; other accounts on the machine cannot read it."""
+    path = data_dir / "desktop-token"
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if len(existing) >= 20:
+            return existing
+    except OSError:
+        pass
+    data_dir.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(24)
+    path.write_text(token, encoding="utf-8")
+    if sys.platform != "win32":
+        path.chmod(0o600)
+    return token
+
+
 def configure_environment(data_dir: Path | None) -> None:
     """Defaults for desktop use. Anything the user already exported wins."""
     defaults = {
@@ -86,6 +104,12 @@ def configure_environment(data_dir: Path | None) -> None:
         defaults["NAMAO_BIN_DIR"] = str(bin_dir)
     for key, value in defaults.items():
         os.environ.setdefault(key, value)
+    os.environ.setdefault("NAMAO_DESKTOP_TOKEN", load_or_create_token(Path(os.environ["NAMAO_DATA_DIR"])))
+
+
+def ui_url(port: int) -> str:
+    """The address to open: carries the per-user token once; the server turns it into a cookie."""
+    return f"http://{HOST}:{port}/?t={os.environ['NAMAO_DESKTOP_TOKEN']}"
 
 
 def run_check() -> int:
@@ -110,7 +134,7 @@ def run_check() -> int:
 def open_browser_when_ready(port: int) -> None:
     for _ in range(100):
         if namao_running_on(port):
-            webbrowser.open(f"http://{HOST}:{port}")
+            webbrowser.open(ui_url(port))
             return
         time.sleep(0.2)
 
@@ -129,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if namao_running_on(args.port):  # single instance: just show the existing one
         if not args.no_browser:
-            webbrowser.open(f"http://{HOST}:{args.port}")
+            webbrowser.open(ui_url(args.port))
         print(f"{APP_NAME} is already running at http://{HOST}:{args.port}")
         return 0
 
