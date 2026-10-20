@@ -1,3 +1,9 @@
-fastapi
-uvicorn[standard]
-yt-dlp
+# Runtime dependencies. Everything that affects YouTube extraction is pinned
+# exactly: see docs/download-reliability.md before changing the yt-dlp lines.
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+# "[default]" pulls yt-dlp-ejs (YouTube JS-challenge solver scripts) and the
+# optional deps upstream recommends. A JS runtime (Deno preferred, Node >= 22)
+# and real ffmpeg/ffprobe binaries are NOT pip packages; see docs/deployment.md.
+yt-dlp[default]==2026.8.19
+yt-dlp-ejs==0.8.0
