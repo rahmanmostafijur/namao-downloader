@@ -360,3 +360,11 @@ def test_openapi_documents_every_public_route(env):
     }
     for path, methods in expected.items():
         assert methods <= set(paths[path]), path
+
+
+def test_committed_openapi_schema_matches_the_running_app(env):
+    """docs/openapi.json is generated from the app; regenerate with scripts/export_openapi.py when routes change."""
+    import json
+    from pathlib import Path
+    committed = json.loads((Path(__file__).resolve().parents[1] / "docs" / "openapi.json").read_text(encoding="utf-8"))
+    assert committed == json.loads(json.dumps(env.app.openapi())), "docs/openapi.json is stale"

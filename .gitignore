@@ -21,3 +21,10 @@ data/
 *.db-shm
 .pytest_cache/
 .coverage
+
+# Mobile (Expo): dependencies and generated artifacts
+mobile/node_modules/
+mobile/android/
+mobile/ios/
+mobile/dist/
+mobile/.expo/

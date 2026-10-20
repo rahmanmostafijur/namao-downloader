@@ -92,3 +92,22 @@ jobs:
         with:
           name: namao-${{ runner.os }}
           path: dist/Namao*
+
+  mobile:
+    name: mobile client (typecheck, tests, JS bundles)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: CI=1 npx expo export --platform android --platform ios --output-dir "$RUNNER_TEMP/mobile-dist"
+      # Native builds (APK/IPA) are not part of CI yet: they need the Android SDK / Xcode (or EAS).

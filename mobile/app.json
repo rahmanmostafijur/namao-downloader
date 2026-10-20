@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Namao",
+    "slug": "namao",
+    "scheme": "namao",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "app.namao.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryAddUsageDescription": "Namao saves the videos you download to your photo library."
+      }
+    },
+    "android": {
+      "package": "app.namao.mobile"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Namao saves the videos you download to your library.",
+          "granularPermissions": ["video", "audio"]
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": { "NSExtensionActivationSupportsWebURLWithMaxCount": 1, "NSExtensionActivationSupportsText": true },
+          "androidIntentFilters": ["text/*"],
+          "androidMultiIntentFilters": []
+        }
+      ]
+    ]
+  }
+}
