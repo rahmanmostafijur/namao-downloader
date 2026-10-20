@@ -151,10 +151,16 @@ class JobTimeoutError(Exception):
 # Sanitizing text before it is stored / returned / logged
 # ---------------------------------------------------------------------------
 
-_URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
-_URL_HOST_RE = re.compile(r"https?://[^/?#]+", re.IGNORECASE)
-_WIN_PATH_RE = re.compile(r"\b[A-Za-z]:\\[^\s'\"]+")
-_POSIX_PATH_RE = re.compile(r"(?<![\w:/])/(?:[\w.\-]+/)+[\w.\-]*")
+_URL_RE = re.compile(r"(?:https?:)?//[^\s'\"<>]+", re.IGNORECASE)
+_URL_HOST_RE = re.compile(r"((?:https?:)?)//(?:[^/?#@]*@)?([^/?#]+)", re.IGNORECASE)
+# Windows path: directory segments may contain spaces; the final segment ends at whitespace.
+_WIN_PATH_RE = re.compile(r"\b[A-Za-z]:\\(?:[^\\/:*?\"<>|\r\n]+\\)*[^\\/:*?\"<>|\s]*")
+_POSIX_PATH_RE = re.compile(r"(?<![\w:/.\-])/[\w.\-]+(?:/[\w.\-]*)*")
+_SECRET_PARAM_RE = re.compile(
+    r"(?i)\b(token|access_token|api[_-]?key|key|sig|signature|password|passwd|secret|sessionid|cookie|"
+    r"authorization)(\s*[=:]\s*)(?:bearer\s+)?[^\s&;,'\"]+"
+)
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MAX_DETAIL_CHARS = 240
 
@@ -162,16 +168,22 @@ MAX_DETAIL_CHARS = 240
 def redact(text: str) -> str:
     """Strip anything that could carry credentials or reveal server layout.
 
-    URLs are reduced to scheme://host/… (signed media URLs keep their secrets
-    in the path and query), and filesystem paths are replaced.
+    URLs are reduced to scheme://host/… (userinfo, path and query dropped: signed
+    media URLs keep their secrets there), token-like key=value pairs and bearer
+    tokens are masked, and filesystem paths are replaced.
     """
 
     def _url(match: re.Match[str]) -> str:
-        host = _URL_HOST_RE.match(match.group(0))
-        return f"{host.group(0)}/…" if host else "<url>"
+        parts = _URL_HOST_RE.match(match.group(0))
+        if not parts:
+            return "<url>"
+        scheme = parts.group(1) or "https:"
+        return f"{scheme}//{parts.group(2)}/…"
 
     text = _ANSI_RE.sub("", text)
     text = _URL_RE.sub(_url, text)
+    text = _BEARER_RE.sub("Bearer <redacted>", text)
+    text = _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", text)
     text = _WIN_PATH_RE.sub("<path>", text)
     text = _POSIX_PATH_RE.sub("<path>", text)
     return text

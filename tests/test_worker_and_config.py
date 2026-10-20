@@ -139,3 +139,31 @@ def test_a_crashed_worker_is_detected_and_its_job_reaped_by_another_worker(setti
     finally:
         survivor.stop()
     assert store.get(job.id).error_code == "interrupted"
+
+
+def test_an_empty_api_key_refuses_to_start_instead_of_silently_disabling_auth(monkeypatch):
+    monkeypatch.setenv("NAMAO_API_KEY", "   ")
+    with pytest.raises(ValueError, match="NAMAO_API_KEY"):
+        load_settings()
+    monkeypatch.delenv("NAMAO_API_KEY")
+    assert load_settings().api_key is None
+
+
+def test_stale_threshold_must_exceed_heartbeat_interval(monkeypatch):
+    monkeypatch.setenv("NAMAO_HEARTBEAT_INTERVAL_SECONDS", "10")
+    monkeypatch.setenv("NAMAO_STALE_AFTER_SECONDS", "15")
+    with pytest.raises(ValueError, match="STALE_AFTER"):
+        load_settings()
+
+
+def test_a_binary_planted_in_the_working_directory_is_never_used(tmp_path, monkeypatch):
+    import os
+    from namao.config import Settings
+    from namao.engine.tools import find_executable
+    planted = tmp_path / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    planted.write_text("#!/bin/sh\necho evil\n")
+    planted.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "elsewhere"))
+    assert find_executable("ffmpeg", Settings()) is None
+    assert find_executable("ffmpeg", Settings(bin_dir=tmp_path)) is not None  # explicit opt-in works

@@ -67,7 +67,22 @@ def _search_path(settings: Settings) -> str:
 
 
 def find_executable(name: str, settings: Settings) -> str | None:
-    return shutil.which(name, path=_search_path(settings))
+    """Resolve a binary from NAMAO_BIN_DIR and PATH only.
+
+    On Windows `shutil.which` may also consult the current directory; a binary
+    planted in the working directory must never be executed, so a hit outside the
+    search path is ignored.
+    """
+    search = _search_path(settings)
+    found = shutil.which(name, path=search)
+    if not found:
+        return None
+    # absolute + normcase, but no symlink resolution (package managers expose binaries via link dirs)
+    parent = os.path.normcase(os.path.abspath(os.path.dirname(found)))
+    allowed = {os.path.normcase(os.path.abspath(p)) for p in search.split(os.pathsep) if p}
+    if parent not in allowed:
+        return None
+    return os.path.abspath(found)
 
 
 def _run_version(path: str, args: list[str]) -> str | None:

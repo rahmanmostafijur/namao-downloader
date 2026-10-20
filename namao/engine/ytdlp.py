@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from datetime import date
 from importlib import metadata as importlib_metadata
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yt_dlp
-from yt_dlp.utils import DownloadError, ExtractorError, UnsupportedError
+from yt_dlp.utils import UnsupportedError
 
 from ..config import Settings
 from ..errors import (
@@ -74,50 +75,71 @@ class _YdlLogger:
 class _ProgressTracker:
     """Combine per-stream yt-dlp events into one monotonic progress value.
 
-    A merged download is two sequential transfers (video, then audio); the raw
-    per-file percentage would jump 0 → 100 twice. Here progress is
-    downloaded / expected-total across all streams, capped at 99% until the
-    post-processing (merge/convert) finishes.
+    A merged download is several sequential transfers (video, then audio); the
+    raw per-file percentage would jump 0 → 100 twice. Each stream contributes
+    its own completed fraction, weighted by its size when every stream's size
+    is known (equal weights otherwise), so the value never stalls at 99% while
+    a later stream is still downloading. It is capped at 99% until the
+    post-processing (merge/convert) starts. Fragment downloads call the hook
+    from worker threads, hence the lock.
     """
 
-    def __init__(self, expected_total: int | None, on_progress: ProgressCallback,
-                 max_output_bytes: int, stream_count: int) -> None:
-        self._expected_total = expected_total or 0
+    def __init__(self, stream_sizes: list[int | None], on_progress: ProgressCallback,
+                 max_output_bytes: int) -> None:
+        self._count = max(len(stream_sizes), 1)
+        sizes = list(stream_sizes) or [None]
+        self._expected = [int(s) for s in sizes] if all(sizes) else None
+        self._weights = self._expected or [1] * self._count
         self._on_progress = on_progress
         self._max_bytes = max_output_bytes
-        self._stream_count = max(stream_count, 1)
-        self._downloaded: dict[str, int] = {}
-        self._totals: dict[str, int] = {}
+        self._order: list[str] = []  # stream keys in order of first appearance
+        self._done: dict[str, int] = {}
+        self._total: dict[str, int] = {}
+        self._complete: set[str] = set()
         self._last_percent = 0.0
+        self._lock = threading.Lock()
 
-    def downloading(self, event: dict[str, Any]) -> None:
-        key = str(event.get("filename") or event.get("tmpfilename") or "stream")
-        done = int(event.get("downloaded_bytes") or 0)
-        total = int(event.get("total_bytes") or event.get("total_bytes_estimate") or 0)
-        self._downloaded[key] = max(self._downloaded.get(key, 0), done)
-        if total:
-            self._totals[key] = total
+    def update(self, event: dict[str, Any]) -> None:
+        with self._lock:
+            key = str(event.get("filename") or event.get("tmpfilename") or "stream")
+            if key not in self._order:
+                self._order.append(key)
+            done = int(event.get("downloaded_bytes") or 0)
+            total = int(event.get("total_bytes") or event.get("total_bytes_estimate") or 0)
+            self._done[key] = max(self._done.get(key, 0), done)
+            if total:
+                self._total[key] = max(self._total.get(key, 0), total)
+            if event.get("status") == "finished":
+                self._complete.add(key)
 
-        downloaded = sum(self._downloaded.values())
-        if downloaded > self._max_bytes:
-            raise NamaoError(ErrorCode.FILE_TOO_LARGE, f"download exceeded {self._max_bytes} bytes")
+            downloaded = sum(self._done.values())
+            if downloaded > self._max_bytes:
+                raise NamaoError(ErrorCode.FILE_TOO_LARGE, f"download exceeded {self._max_bytes} bytes")
 
-        known_total = max(self._expected_total, sum(self._totals.values()))
-        if known_total:
-            percent = min(99.0, downloaded * 100.0 / known_total)
-        else:  # unknown size: spread streams evenly
-            percent = min(99.0, (len(self._downloaded) - 1 + 0.0) * 100.0 / self._stream_count)
-        self._last_percent = max(self._last_percent, percent)
-        self._on_progress(
-            ProgressUpdate(
+            weighted = 0.0
+            for index in range(self._count):
+                if index >= len(self._order):
+                    continue  # stream not started yet
+                stream = self._order[index]
+                if stream in self._complete:
+                    fraction = 1.0
+                elif self._total.get(stream):
+                    fraction = min(0.999, self._done.get(stream, 0) / self._total[stream])
+                else:
+                    fraction = 0.0
+                weighted += self._weights[index] * fraction
+            percent = min(99.0, weighted * 100.0 / sum(self._weights))
+            self._last_percent = max(self._last_percent, percent)
+            total_bytes = sum(self._expected) if self._expected else None
+            update = ProgressUpdate(
                 stage=Stage.DOWNLOADING,
                 percent=self._last_percent,
                 downloaded_bytes=downloaded,
-                total_bytes=known_total or None,
-                speed_bps=event.get("speed"),
+                total_bytes=total_bytes,
+                speed_bps=event.get("speed"),  # of the stream currently transferring
                 eta_seconds=int(event["eta"]) if event.get("eta") is not None else None,
             )
-        )
+        self._on_progress(update)
 
     def merging(self) -> None:
         self._on_progress(ProgressUpdate(stage=Stage.MERGING, percent=max(self._last_percent, 99.0)))
@@ -187,8 +209,6 @@ class YtDlpEngine:
             raise
         except UnsupportedError as exc:
             raise NamaoError(ErrorCode.UNSUPPORTED_PLATFORM, str(exc)) from exc
-        except (DownloadError, ExtractorError) as exc:
-            raise self._classify(exc, phase, logger, toolchain) from exc
         except Exception as exc:  # noqa: BLE001 - normalized, never leaked raw
             raise self._classify(exc, phase, logger, toolchain) from exc
         if not info:
@@ -225,7 +245,7 @@ class YtDlpEngine:
         options["outtmpl"] = _OUTPUT_TEMPLATE
 
         def guard() -> None:
-            if should_cancel():
+            if _call_hook(should_cancel):
                 raise CancelledError()
             if time.monotonic() > deadline:
                 raise JobTimeoutError()
@@ -234,13 +254,16 @@ class YtDlpEngine:
 
         def progress_hook(event: dict[str, Any]) -> None:
             guard()
-            if event.get("status") == "downloading" and "t" in tracker_box:
-                tracker_box["t"].downloading(event)
+            if event.get("status") in ("downloading", "finished") and "t" in tracker_box:
+                _call_hook(tracker_box["t"].update, event)
 
         def postprocessor_hook(event: dict[str, Any]) -> None:
             guard()
-            if event.get("status") == "started" and "t" in tracker_box:
-                tracker_box["t"].merging()
+            name = str(event.get("postprocessor") or "").lower()
+            if event.get("status") == "started" and "t" in tracker_box and any(
+                key in name for key in ("merg", "audio", "convert")
+            ):
+                _call_hook(tracker_box["t"].merging)
 
         options["progress_hooks"] = [progress_hook]
         options["postprocessor_hooks"] = [postprocessor_hook]
@@ -248,16 +271,18 @@ class YtDlpEngine:
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 guard()
-                on_progress(ProgressUpdate(stage=Stage.FETCHING_METADATA))
+                _call_hook(on_progress, ProgressUpdate(stage=Stage.FETCHING_METADATA))
                 info = _first_video(ydl.extract_info(request.url, download=False))
                 self._check_policy(info, request)
                 formats = info.get("requested_formats") or [info]
                 tracker_box["t"] = _ProgressTracker(
-                    _expected_size(formats), on_progress, request.max_output_bytes, len(formats)
+                    _stream_sizes(formats), on_progress, request.max_output_bytes
                 )
                 guard()
-                on_progress(ProgressUpdate(stage=Stage.DOWNLOADING))
+                _call_hook(on_progress, ProgressUpdate(stage=Stage.DOWNLOADING))
                 result = ydl.process_ie_result(info, download=True)
+        except _HookFailure as failure:
+            raise failure.cause from None  # a bug/loss of ownership on our side, not a yt-dlp failure
         except (CancelledError, JobTimeoutError, NamaoError):
             raise
         except Exception as exc:  # noqa: BLE001 - normalized, never leaked raw
@@ -278,7 +303,8 @@ class YtDlpEngine:
         duration = info.get("duration")
         if duration and duration > request.max_duration_seconds:
             raise NamaoError(ErrorCode.DURATION_TOO_LONG, f"{duration}s > {request.max_duration_seconds}s")
-        estimate = _expected_size(info.get("requested_formats") or [info])
+        sizes = _stream_sizes(info.get("requested_formats") or [info])
+        estimate = sum(sizes) if all(sizes) else None
         if estimate and estimate > request.max_output_bytes:
             raise NamaoError(ErrorCode.FILE_TOO_LARGE, f"estimated {estimate} bytes")
 
@@ -363,11 +389,34 @@ def _first_video(info: dict[str, Any]) -> dict[str, Any]:
     return info
 
 
-def _expected_size(formats: list[dict[str, Any]]) -> int | None:
-    sizes = [f.get("filesize") or f.get("filesize_approx") for f in formats]
-    if not sizes or any(not s for s in sizes):
-        return None
-    return int(sum(sizes))
+def _stream_sizes(formats: list[dict[str, Any]]) -> list[int | None]:
+    sizes = []
+    for fmt in formats:
+        size = fmt.get("filesize") or fmt.get("filesize_approx")
+        sizes.append(int(size) if size else None)
+    return sizes
+
+
+class _HookFailure(Exception):
+    """Wraps an exception raised by *our* callbacks inside a yt-dlp hook.
+
+    yt-dlp propagates hook exceptions through its own error handling; wrapping
+    lets `download()` re-raise the original instead of classifying it as a
+    yt-dlp failure (which would hide bugs and could trigger needless retries).
+    """
+
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+
+
+def _call_hook(callback, *args):
+    try:
+        return callback(*args)
+    except (CancelledError, JobTimeoutError, NamaoError):
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _HookFailure(exc) from exc
 
 
 def _final_path(result: dict[str, Any]) -> Path | None:
@@ -402,7 +451,7 @@ def _to_metadata(info: dict[str, Any], platform: str) -> MediaMetadata:
         title=str(info.get("title") or "Untitled"),
         uploader=str(info.get("uploader") or info.get("channel") or ""),
         duration_seconds=int(info.get("duration") or 0),
-        thumbnail=info.get("thumbnail"),
+        thumbnail=_safe_thumbnail(info.get("thumbnail")),
         is_live=bool(info.get("is_live")),
         formats=tuple(formats),
     )
@@ -432,3 +481,8 @@ def _engine_age_days(today: date | None = None) -> int | None:
     return ((today or date.today()) - released).days
 
 
+def _safe_thumbnail(value: Any) -> str | None:
+    """Thumbnails are shown by clients: accept only plain https URLs."""
+    if isinstance(value, str) and re.match(r"^https://[^\s]+$", value, re.IGNORECASE) and len(value) <= 2048:
+        return value
+    return None

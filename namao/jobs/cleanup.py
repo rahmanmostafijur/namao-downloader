@@ -82,7 +82,11 @@ def sweep(settings: Settings, store: JobStore) -> dict[str, int]:
         known = store.known_job_ids()
         cutoff = time.time() - ORPHAN_MIN_AGE_SECONDS
         for child in settings.jobs_dir.iterdir():
-            if child.is_dir() and child.name not in known and child.stat().st_mtime < cutoff:
+            try:
+                is_orphan = child.is_dir() and child.name not in known and child.stat().st_mtime < cutoff
+            except OSError:  # vanished mid-iteration (concurrent cleanup)
+                continue
+            if is_orphan:
                 orphans += remove_tree(child)
 
     purged = store.purge_rows_older_than(ROW_RETENTION_SECONDS)

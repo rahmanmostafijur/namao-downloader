@@ -40,6 +40,12 @@ PLATFORM_DOMAINS: dict[str, tuple[str, ...]] = {
 }
 
 _ALLOWED_PORTS = {None, 80, 443}
+# Strict LDH hostname labels. Python's idna codec doesn't enforce this, and urlsplit leaves
+# characters such as a backslash in the hostname, which browsers treat as a path separator.
+_HOST_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+")
+_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+_SIXTO4 = ipaddress.ip_network("2002::/16")
 _CONTROL_CHARS = re.compile(r"[\x00-\x20\x7f]")
 
 
@@ -64,8 +70,14 @@ def _is_public_address(address: str) -> bool:
         ip = ipaddress.ip_address(address.split("%")[0])
     except ValueError:
         return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        embedded = ip.ipv4_mapped
+        if embedded is None and ip in _NAT64:
+            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        if embedded is None and ip in _SIXTO4:
+            embedded = ipaddress.IPv4Address((int(ip) >> 80) & 0xFFFFFFFF)
+        if embedded is not None:
+            return _is_public_address(str(embedded))
     return ip.is_global and not ip.is_multicast
 
 
@@ -114,6 +126,9 @@ def validate_url(raw: str, settings: Settings) -> ValidatedUrl:
         host = host.encode("idna").decode("ascii")
     except UnicodeError:
         raise NamaoError(ErrorCode.INVALID_URL) from None
+    valid_host = _HOST_RE.fullmatch(host) or (settings.allow_private_networks and _LABEL_RE.fullmatch(host))
+    if not valid_host:  # (single-label hosts like "localhost" are only valid in test mode)
+        raise NamaoError(ErrorCode.INVALID_URL, "host contains illegal characters")
     # Literal IPs are never platform hosts.
     try:
         ipaddress.ip_address(host.strip("[]"))

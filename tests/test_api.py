@@ -352,7 +352,7 @@ def test_security_headers_are_present(env):
 
 
 def test_openapi_documents_every_public_route(env):
-    paths = env.client.get("/openapi.json").json()["paths"]
+    paths = env.app.openapi()["paths"]  # the HTTP route is off by default (see test_hardening)
     expected = {
         f"{BASE}/metadata": {"post"}, BASE: {"post"}, f"{BASE}/{{job_id}}": {"get"},
         f"{BASE}/{{job_id}}/progress": {"get"}, f"{BASE}/{{job_id}}/cancel": {"post"},

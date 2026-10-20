@@ -102,7 +102,7 @@ def test_unknown_columns_are_refused(store):
 
 def test_cancelling_a_queued_job_is_immediate(store):
     job, _ = make(store)
-    cancelled = store.request_cancel(job.id)
+    cancelled = store.request_cancel(job.id, 60)
     assert cancelled.status == JobStatus.CANCELLED and cancelled.error_code == "cancelled"
     assert store.claim_next("w1") is None
 
@@ -110,17 +110,17 @@ def test_cancelling_a_queued_job_is_immediate(store):
 def test_cancelling_a_running_job_flags_it_for_its_worker(store):
     job, _ = make(store)
     store.claim_next("w1")
-    flagged = store.request_cancel(job.id)
+    flagged = store.request_cancel(job.id, 60)
     assert flagged.status == JobStatus.VALIDATING and flagged.cancel_requested
     assert store.is_cancel_requested(job.id)
 
 
 def test_cancelling_unknown_or_finished_jobs_is_safe(store):
-    assert store.request_cancel("nope") is None
+    assert store.request_cancel("nope", 60) is None
     job, _ = make(store)
     store.claim_next("w1")
     store.update(job.id, "w1", status=JobStatus.COMPLETED)
-    assert store.request_cancel(job.id).status == JobStatus.COMPLETED
+    assert store.request_cancel(job.id, 60).status == JobStatus.COMPLETED
 
 
 def test_stale_running_jobs_become_interrupted(store):
@@ -136,7 +136,7 @@ def test_stale_running_jobs_become_interrupted(store):
 def test_fresh_heartbeats_prevent_reaping(store):
     job, _ = make(store)
     store.claim_next("w1")
-    store.heartbeat_jobs("w1")
+    store.heartbeat_jobs("w1", [job.id])
     assert store.reap_stale(stale_after=5, retention_seconds=60) == []
 
 
@@ -173,5 +173,16 @@ def test_open_job_count_ignores_terminal_jobs(store):
     a, _ = make(store)
     make(store)
     assert store.open_job_count() == 2
-    store.request_cancel(a.id)
+    store.request_cancel(a.id, 60)
     assert store.open_job_count() == 1
+
+
+def test_a_retry_scheduled_after_a_cancel_request_ends_cancelled_not_stuck_in_queue(store):
+    job, _ = make(store)
+    store.claim_next("w1")
+    store.request_cancel(job.id, retention_seconds=60)  # user cancels while the attempt is running
+    assert store.schedule_retry(job.id, "w1", next_attempt_at=time.time(), error_code="network_transient",
+                                error_message="m", error_retryable=True, error_detail=None)
+    final = store.get(job.id)
+    assert final.status == JobStatus.CANCELLED and final.expires_at is not None
+    assert store.open_job_count() == 0 and store.claim_next("w2") is None

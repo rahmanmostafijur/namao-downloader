@@ -102,3 +102,25 @@ def test_detail_is_single_line_and_bounded():
 def test_error_detail_never_contains_the_raw_signed_url():
     error = classify_exception(Exception("HTTP Error 403 for https://host.example/a?token=SECRET"))
     assert "SECRET" not in (error.detail or "")
+
+
+@pytest.mark.parametrize("text, leaked", [
+    ("fail https://user:tok@cdn.example.com/a/b?sig=ABC", "tok@"),
+    ("fail https://user:tok@cdn.example.com/a/b?sig=ABC", "ABC"),
+    ("see //cdn2.example/x?token=ZZZ", "ZZZ"),
+    ("Authorization: Bearer abc.def.ghi", "abc.def"),
+    ("cookie=SESSIONVALUE; other", "SESSIONVALUE"),
+    ("api_key=hunter2&x=1", "hunter2"),
+    (r"wrote C:\Users\bob smith\data\jobs\x.mp4 ok", "bob"),
+    (r"wrote C:\Users\bob smith\data\jobs\x.mp4 ok", "jobs"),
+    ("open /etc failed", "/etc"),
+    ("open /srv/namao/data/x failed", "/srv"),
+])
+def test_redaction_gaps_found_in_review_are_closed(text, leaked):
+    assert leaked not in redact(text)
+
+
+def test_redaction_keeps_useful_context():
+    cleaned = redact("HTTP Error 403 from https://rr3.googlevideo.com/videoplayback?sig=S for host")
+    assert "https://rr3.googlevideo.com/…" in cleaned and "HTTP Error 403" in cleaned
+    assert redact("and/or n/a http/1.1") == "and/or n/a http/1.1"

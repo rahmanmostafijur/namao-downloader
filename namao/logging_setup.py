@@ -27,7 +27,7 @@ class JsonFormatter(logging.Formatter):
         }
         for key, value in record.__dict__.items():
             if key not in _STANDARD_ATTRS and not key.startswith("_"):
-                payload[key] = redact(value) if isinstance(value, str) else value
+                payload[key] = value if isinstance(value, (int, float, bool, type(None))) else redact(str(value))
         if record.exc_info:
             # Class name only: tracebacks can embed URLs, paths and tokens.
             payload["exc"] = record.exc_info[0].__name__ if record.exc_info[0] else None

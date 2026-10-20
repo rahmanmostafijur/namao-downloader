@@ -77,11 +77,18 @@ class Settings:
     cleanup_interval_seconds: float = 60.0
     # --- API protection ----------------------------------------------------
     max_queue_length: int = 50
+    max_open_jobs_per_client: int = 5
+    max_sse_streams: int = 100
+    sse_max_seconds: int = 900
+    read_rate_limit_per_minute: int = 600
     rate_limit_per_minute: int = 30
     metadata_concurrency: int = 4
     metadata_timeout_seconds: int = 60
     api_key: str | None = None
     trust_proxy: bool = False
+    trusted_proxies: int = 1  # reverse-proxy hops that append to X-Forwarded-For
+    expose_error_detail: bool = False  # sanitized engine text in API errors (debugging only)
+    expose_docs: bool = False  # /docs, /redoc, /openapi.json
     # --- engine ------------------------------------------------------------
     js_runtime: str = "auto"  # auto | deno | node
     require_js_runtime: bool = True
@@ -117,9 +124,41 @@ class Settings:
             path.mkdir(parents=True, exist_ok=True)
 
 
+def _require_positive(name: str, value: float) -> None:
+    if value <= 0:
+        raise ValueError(f"NAMAO_{name} must be greater than zero, got {value}")
+
+
+def _api_key() -> str | None:
+    raw = os.environ.get("NAMAO_API_KEY")
+    if raw is None:
+        return None
+    if not raw.strip():
+        # An empty value almost always means a missing secret in a template
+        # (NAMAO_API_KEY=${API_KEY}); silently disabling auth would be worse than refusing to start.
+        raise ValueError("NAMAO_API_KEY is set but empty; unset it to disable authentication or give it a value")
+    return raw
+
+
 def load_settings() -> Settings:
     defaults = Settings()
     bin_dir = _env("BIN_DIR")
+    settings = _build_settings(defaults, bin_dir)
+    _require_positive("JOB_TIMEOUT_SECONDS", settings.job_timeout_seconds)
+    _require_positive("HEARTBEAT_INTERVAL_SECONDS", settings.heartbeat_interval_seconds)
+    _require_positive("POLL_INTERVAL_SECONDS", settings.poll_interval_seconds)
+    _require_positive("RETENTION_SECONDS", settings.retention_seconds)
+    if settings.stale_after_seconds < 3 * settings.heartbeat_interval_seconds:
+        raise ValueError(
+            "NAMAO_STALE_AFTER_SECONDS must be at least 3x NAMAO_HEARTBEAT_INTERVAL_SECONDS, "
+            "otherwise healthy jobs get reaped"
+        )
+    if settings.trust_proxy and settings.trusted_proxies < 1:
+        raise ValueError("NAMAO_TRUSTED_PROXIES must be >= 1 when NAMAO_TRUST_PROXY is on")
+    return settings
+
+
+def _build_settings(defaults: Settings, bin_dir: str | None) -> Settings:
     return Settings(
         data_dir=Path(_env("DATA_DIR", str(defaults.data_dir))),
         worker_concurrency=max(1, _env_int("WORKER_CONCURRENCY", defaults.worker_concurrency)),
@@ -137,11 +176,18 @@ def load_settings() -> Settings:
         retention_seconds=_env_int("RETENTION_SECONDS", defaults.retention_seconds),
         cleanup_interval_seconds=_env_float("CLEANUP_INTERVAL_SECONDS", defaults.cleanup_interval_seconds),
         max_queue_length=_env_int("MAX_QUEUE_LENGTH", defaults.max_queue_length),
+        max_open_jobs_per_client=_env_int("MAX_OPEN_JOBS_PER_CLIENT", defaults.max_open_jobs_per_client),
+        max_sse_streams=_env_int("MAX_SSE_STREAMS", defaults.max_sse_streams),
+        sse_max_seconds=_env_int("SSE_MAX_SECONDS", defaults.sse_max_seconds),
+        read_rate_limit_per_minute=_env_int("READ_RATE_LIMIT_PER_MINUTE", defaults.read_rate_limit_per_minute),
         rate_limit_per_minute=_env_int("RATE_LIMIT_PER_MINUTE", defaults.rate_limit_per_minute),
         metadata_concurrency=max(1, _env_int("METADATA_CONCURRENCY", defaults.metadata_concurrency)),
         metadata_timeout_seconds=_env_int("METADATA_TIMEOUT_SECONDS", defaults.metadata_timeout_seconds),
-        api_key=_env("API_KEY"),
+        api_key=_api_key(),
         trust_proxy=_env_bool("TRUST_PROXY", defaults.trust_proxy),
+        trusted_proxies=_env_int("TRUSTED_PROXIES", defaults.trusted_proxies),
+        expose_error_detail=_env_bool("EXPOSE_ERROR_DETAIL", defaults.expose_error_detail),
+        expose_docs=_env_bool("EXPOSE_DOCS", defaults.expose_docs),
         js_runtime=(_env("JS_RUNTIME", defaults.js_runtime) or "auto").lower(),
         require_js_runtime=_env_bool("REQUIRE_JS_RUNTIME", defaults.require_js_runtime),
         bin_dir=Path(bin_dir) if bin_dir else None,

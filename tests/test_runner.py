@@ -164,7 +164,7 @@ def test_cancel_stops_a_running_download_and_cleans_up(settings):
     thread.start()
     wait_for(lambda: started)
     assert h.jobdir(job.id).exists()
-    h.store.request_cancel(job.id)
+    h.store.request_cancel(job.id, 60)
     thread.join(10)
     final = result["job"]
     assert final.status == JobStatus.CANCELLED and final.error_code == "cancelled"

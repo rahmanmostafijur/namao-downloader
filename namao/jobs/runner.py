@@ -1,8 +1,10 @@
 """Executes one claimed job through the lifecycle.
 
 queued → validating → fetching_metadata → downloading → merging → verifying
-→ completed, or failed / cancelled / interrupted. A job is only `completed`
-after the output passed FFprobe verification.
+→ completed. Other outcomes: failed, cancelled, or interrupted (worker shutdown;
+the reaper also produces `interrupted`). A transient failure sends the job back
+to `queued` with a backoff delay while attempts remain. A job is only
+`completed` after the output passed FFprobe verification.
 """
 
 from __future__ import annotations
@@ -118,7 +120,7 @@ class JobRunner:
             eta_seconds=None,
             title=downloaded.title[:300],
             filename=filename,
-            output_name=verified.path.relative_to(jobdir).as_posix(),
+            output_name=verified.path.resolve().relative_to(jobdir.resolve()).as_posix(),
             output_size=verified.size_bytes,
             output_height=verified.height,
             output_duration=verified.duration_seconds,
@@ -215,7 +217,10 @@ class JobRunner:
         )
         if will_retry:
             delay = backoff_delay(job.attempt, self._settings.retry_base_seconds, self._settings.retry_max_seconds)
-            self._store.schedule_retry(job.id, self._worker_id, next_attempt_at=time.time() + delay, **fields)
+            self._store.schedule_retry(
+                job.id, self._worker_id, next_attempt_at=time.time() + delay,
+                retention_seconds=self._settings.retention_seconds, **fields,
+            )
             log_event(log, "job.retry_scheduled", job_id=job.id, code=error.code.value,
                       attempt=job.attempt, delay_seconds=round(delay, 1))
             return

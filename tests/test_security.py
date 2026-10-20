@@ -139,3 +139,28 @@ def test_long_non_ascii_titles_are_truncated_on_a_utf8_boundary():
 def test_extension_comes_from_the_verified_output_not_the_title():
     assert safe_filename("movie.exe", "mp4") == "movie.exe.mp4"
     assert safe_filename("x", "../../sh") == "x.sh"
+
+
+@pytest.mark.parametrize("url", [
+    r"https://evil.com\.youtube.com/x",
+    "https://you tube.com/x",
+    "https://youtube.com_evil.example/x",
+    "https://-youtube.com/x",
+    "https://youtube..com/x",
+])
+def test_hostnames_must_be_plain_ldh_labels(strict, dns, url):
+    with pytest.raises(NamaoError):
+        validate_url(url, strict)
+
+
+@pytest.mark.parametrize("answer", ["64:ff9b::7f00:1", "64:ff9b::a00:1", "2002:7f00:1::1", "2002:c0a8:101::1"])
+def test_embedded_private_ipv4_in_nat64_and_6to4_is_rejected(strict, dns, answer):
+    dns.answer = answer
+    with pytest.raises(NamaoError) as err:
+        validate_url("https://www.youtube.com/watch?v=abc", strict)
+    assert err.value.code == ErrorCode.INVALID_URL
+
+
+def test_nat64_wrapping_a_public_address_is_allowed(strict, dns):
+    dns.answer = "64:ff9b::8efa:480e"  # 142.250.72.14
+    assert validate_url("https://www.youtube.com/watch?v=abc", strict).platform == "youtube"
