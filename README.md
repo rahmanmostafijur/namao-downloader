@@ -1,103 +1,69 @@
 # নামাও (Namao)
 
-A personal-use video downloader for YouTube, Facebook, TikTok, X (Twitter),
-and Instagram. Paste a link, see the available qualities, click download.
+A self-hosted video downloader for YouTube, Facebook, TikTok, X (Twitter) and Instagram. Paste a link, pick a quality
+the source really offers, watch real progress, save the file. Extraction is done by
+[yt-dlp](https://github.com/yt-dlp/yt-dlp), merging and verification by FFmpeg/FFprobe. No paid downloading API.
 
-All extraction is done by [yt-dlp](https://github.com/yt-dlp/yt-dlp) — this
-project just gives it a UI.
+One server, one API (`/api/v1/downloads/*`), three kinds of client:
 
-## Requirements
+| Client | Where | Notes |
+|---|---|---|
+| Web | `static/` | Served by the server itself. |
+| Desktop (Windows / macOS / Linux) | `launcher.py`, `Namao.spec` | One-file app with the worker built in; saves to a folder you choose. Windows build verified; macOS/Linux built in CI only. |
+| Mobile (iOS / Android) | `mobile/` | Expo app that controls your server and saves the result to the phone. Native builds not verified here. |
 
-- Windows 10
-- Python 3.11+
-- [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) on your `PATH` (optional, but
-  required for 1080p+ merged downloads and MP3 conversion — without it the
-  app still works, just limited to progressive formats and M4A audio)
+The older standalone Android app in `android/` is unchanged (it embeds its own engine); see
+[docs/architecture.md](docs/architecture.md) for why the server-backed app is the supported path.
 
-## Setup (Windows / PowerShell)
+## Run it
+
+**Docker (recommended)**
+
+```bash
+cp .env.example .env        # optional: review limits
+docker compose up -d --build
+curl -s http://127.0.0.1:8000/health/ready     # 200 + "ready" when yt-dlp, EJS, Deno, FFmpeg, DB and worker are fine
+```
+
+Open <http://127.0.0.1:8000>. Details, TLS and limits: [docs/deployment.md](docs/deployment.md).
+
+**From source (Windows PowerShell shown)**
 
 ```powershell
-# from the project folder
 python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+venv\Scripts\pip install -r requirements.txt
+# FFmpeg + FFprobe and Deno (or Node >= 22) must be on PATH
+$env:NAMAO_EMBEDDED_WORKER = "1"
+venv\Scripts\uvicorn main:app
 ```
 
-Open **http://localhost:8000** in your browser.
+**Desktop app**: `pip install -r requirements-desktop.txt; pyinstaller Namao.spec` → `dist\Namao.exe` (`--check` prints
+diagnostics). See [docs/deployment.md](docs/deployment.md#desktop-app).
 
-## Windows .exe (no terminal needed)
+## What changed in 2.0
 
-Namao can also be packaged into a single `Namao.exe`. Double-clicking it
-starts the server in the background and opens your browser automatically —
-no venv, no typing commands.
+The old single-file app downloaded inside the HTTP request, with an unpinned yt-dlp and no checks. YouTube downloads
+failed with HTTP 403 on its stale yt-dlp. Now: a pinned and *verified* dependency chain, an engine interface, durable
+background jobs with real progress/cancel/retry, normalized failure codes, SSRF and input hardening, Docker, an update
+and rollback procedure, and 346 + 16 + 17 automated tests. Read the evidence in [docs/upgrade-audit.md](docs/upgrade-audit.md).
 
-To build it yourself (from an activated venv with `requirements.txt`
-already installed):
+## Documentation
 
-```powershell
-pip install pyinstaller
-pyinstaller --onefile --name Namao --add-data "static;static" --collect-all yt_dlp --collect-data certifi launcher.py
-```
+| | |
+|---|---|
+| [docs/upgrade-audit.md](docs/upgrade-audit.md) | What was wrong, with evidence, and what was changed. |
+| [docs/architecture.md](docs/architecture.md) | Components, job lifecycle, API, security model, decisions, residual risks. |
+| [docs/download-reliability.md](docs/download-reliability.md) | Dependency chain, failure codes, release management, upstream-change runbook. |
+| [docs/deployment.md](docs/deployment.md) | Hosting, limits, TLS, updating, rollback, desktop, troubleshooting, costs. |
+| [docs/testing.md](docs/testing.md) | How to run everything and what was actually run. |
+| [docs/openapi.json](docs/openapi.json) | The API schema (generated; a test keeps it current). |
+| [mobile/README.md](mobile/README.md) | The mobile client and its verification status. |
 
-The finished executable lands at `dist\Namao.exe`. Copy it anywhere (your
-Desktop, a USB stick, another PC with no Python installed) and double-click
-to run — the console window it opens shows the server log and must stay
-open while you use the app; closing it stops the server. ffmpeg still needs
-to be on the `PATH` of whichever machine runs it, same as the source version.
+## Honest limits
 
-Once built, `Namao.spec` remembers these options, so future rebuilds (after
-you change `main.py`, `launcher.py`, or `static/`) are just:
-
-```powershell
-pyinstaller Namao.spec
-```
-
-## Android app (standalone, no PC needed)
-
-`android/` is a separate, standalone Android app — not a copy of the PC
-version talking to a server. It bundles its own yt-dlp + ffmpeg (via the
-[youtubedl-android](https://github.com/yausername/youtubedl-android) library)
-and reuses the same frontend (`static/index.html`) in a WebView, wired to a
-Kotlin bridge instead of the FastAPI routes. See `android/README.md` for the
-full build steps and current status — building it requires an Android
-SDK/Gradle toolchain, which this repo doesn't assume you have installed.
-
-## How it works
-
-```
- browser                          FastAPI (main.py)                yt-dlp
- ───────                          ─────────────────                ──────
- paste URL ──► POST /api/info ──► detect_platform()
-                                   extract_info(url)          ───►  fetch page,
-                                   build_qualities(formats)  ◄───   parse formats
-              ◄── qualities JSON ──
- click "Download" ──► GET /api/download?url=&quality= ──►
-                                   pick format string
-                                   (merge w/ ffmpeg if needed) ───► download +
-                                   serve largest file,        ◄───  merge/convert
-                                   delete temp dir after
-              ◄── file streamed to browser ──
-```
-
-Nothing is stored server-side beyond the lifetime of a single download —
-each request gets its own temp folder, which is deleted right after the file
-is sent to the browser.
-
-## Troubleshooting
-
-- **A specific video won't fetch / download**: platforms change their site
-  frequently, and yt-dlp ships frequent fixes. Try:
-  ```powershell
-  pip install -U yt-dlp
-  ```
-- **"ffmpeg wasn't found" banner**: install ffmpeg and make sure `ffmpeg.exe`
-  is on your `PATH` (test with `ffmpeg -version` in a new terminal), then
-  restart the server.
-- **1080p+ download looks tiny / video-only**: that means ffmpeg isn't
-  available to merge the separate video and audio streams — install ffmpeg.
-
-## Notes
-
-Personal-use tool. Respect creators and each platform's terms of service —
-don't use this to redistribute or pirate content.
+* Platforms can throttle or bot-check a server's address (observed during this work). Namao reports it as
+  `access_blocked` / `source_rate_limited`; updating or retrying does not overcome it, and Namao does not try to evade it.
+* Single, public, non-live videos only. No DRM, login, cookie or CAPTCHA workarounds.
+* Facebook, TikTok and Instagram extraction is enabled but was not exercised with real downloads (no rights-cleared test
+  assets; these platforms often require login).
+* Personal, authorized use. Check each platform's terms before offering this to other people.

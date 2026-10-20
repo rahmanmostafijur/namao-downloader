@@ -142,3 +142,37 @@ this Windows machine; downloads were 144p to keep traffic small.
 7. Docker/Compose, `.env.example`, update-check/rollback tooling, docs, tests.
 8. Web client on the job API; mobile and desktop addressed in a later phase
    with explicit limits stated.
+
+## 8. Outcome (added after implementation, 2026-10-20)
+
+**Confirmed causes, final:** (1) stale yt-dlp → HTTP 403 (reproduced; fixed by 2026.8.19 and the nightly);
+(2) missing yt-dlp-ejs / JS runtime / no verification of any dependency; (3) the PyInstaller spec never bundled
+`yt_dlp_ejs`; (4) the unanchored platform regex (SSRF) and blocking in-request downloads.
+
+**A fifth, environmental cause observed during testing, not assumed:** per-IP throttling. After a few dozen
+automated requests from one residential IPv4 address, YouTube returned HTTP 429 then "Sign in to confirm you're not a
+bot" for the same engine/video/machine, while a fresh IPv6 address worked and `-4` reproduced the failure. This
+confirms the earlier hypothesis that a server's address can be refused regardless of software. Namao classifies it
+(`access_blocked`, `source_rate_limited`) and does not claim to overcome it.
+
+**Decisions:**
+
+| Question | Decision | Why |
+|---|---|---|
+| Production yt-dlp pin | nightly `2026.10.10.233141.dev0`; rollback `2026.8.19` | Upstream recommends nightly; the nightly passed the entire suite including live tests before promotion, via `scripts/engine_update.py`. |
+| JS runtime | Deno 2.9.7 in Docker (checksum-verified); Node ≥ 22 accepted | Upstream prefers Deno; Node is what the dev machine has. |
+| Queue/database | SQLite, no Redis | No DB existed; one host; atomic claims. |
+| Second engine | none | Interface only; no unproven fallback. |
+| Desktop shell | PyInstaller + loopback server, not Tauri | No Rust toolchain; Tauri adds a window around the same UI. |
+| iOS/Android clients | Expo app against the server | On-device yt-dlp is not viable on iOS; Android native app's Python 3.8 engine is unverifiable here. |
+
+**Independent reviews** (security, concurrency/correctness) ran against the first implementation and found real
+bugs, all fixed with regression tests (see `tests/test_hardening.py`): a retry racing a cancel left jobs stuck in
+`queued`; heartbeats starved by slow cleanup could get healthy jobs reaped; non-atomic queue limits; idempotency keys
+shared across clients; proxy-header rate-limit bypass; uncapped SSE; an empty API key silently disabling auth;
+redaction gaps; a crash on IPv4 client addresses; a save-to-folder race. Accepted residual risks are listed in
+[architecture.md](architecture.md#security-model).
+
+**Not verified here:** macOS/Linux desktop builds, anything iOS, native Android builds, GitHub Actions, the Caddy
+proxy at run time (its config passes `caddy validate`), Facebook/TikTok/Instagram real downloads, the legacy Android
+app. See [testing.md](testing.md).
