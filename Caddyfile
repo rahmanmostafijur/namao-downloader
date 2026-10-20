@@ -1,0 +1,23 @@
+# TLS reverse proxy for `docker compose --profile public`.
+# Caddy appends the real client address to X-Forwarded-For; set
+# NAMAO_TRUST_PROXY=1 and NAMAO_TRUSTED_PROXIES=1 so rate limits use it.
+{$NAMAO_DOMAIN} {
+	encode zstd gzip
+
+	# Do not buffer server-sent events (job progress).
+	@sse path_regexp sse ^/api/v1/downloads/[^/]+/progress$
+	reverse_proxy @sse api:8000 {
+		flush_interval -1
+	}
+
+	# Health details are for operators, not the public internet.
+	@internal path /health/ready
+	respond @internal 404
+
+	reverse_proxy api:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

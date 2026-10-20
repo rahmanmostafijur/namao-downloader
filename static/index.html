@@ -716,6 +716,24 @@
     html { scroll-behavior: auto; }
     * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   }
+
+  /* --- download job rows (progress / cancel / retry) --- */
+  .row-action { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+  .quality-size + .row-action { margin-left: 12px; }
+  .job-progress { display: inline-flex; flex-direction: column; gap: 3px; min-width: 150px; }
+  .job-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  .job-label { font-size: 12.5px; color: var(--text-dim); max-width: 260px; }
+  .job-label.job-error { color: #f87171; }
+  :root[data-theme="light"] .job-label.job-error { color: #b91c1c; }
+  .job-detail { font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--text-dim); min-height: 1em; }
+  button.dl-btn { background: transparent; cursor: pointer; font-family: inherit; }
+  button.dl-btn:hover { background: var(--accent); color: #fff; }
+  button.dl-btn:disabled { opacity: 0.5; cursor: default; }
+  .dl-cancel { border-color: var(--border); color: var(--text-dim); }
+  @media (max-width: 640px) {
+    .row-action { width: 100%; margin-left: 0; justify-content: space-between; order: 4; }
+    .job-label { max-width: none; flex: 1; }
+  }
 </style>
 </head>
 <body id="top" data-platform="">
@@ -734,30 +752,10 @@
       <a href="#features">Features</a>
     </div>
     <div class="nav-actions">
-      <button id="folder-btn" class="icon-btn" type="button" aria-label="Choose download folder" title="Choose where downloads are saved" style="display:none">📁</button>
-      <button id="cookies-btn" class="icon-btn" type="button" aria-label="Manage login cookies" title="Login cookies (Instagram, etc.)" style="display:none">🍪</button>
       <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌙</button>
     </div>
   </nav>
 
-  <div id="cookies-modal" class="modal-overlay" style="display:none">
-    <div class="modal">
-      <h2 class="modal-title">Login cookies</h2>
-      <p class="modal-hint">
-        Some Instagram/Facebook posts need a logged-in session to fetch.
-        Paste a Netscape-format <code>cookies.txt</code> export (e.g. from
-        the "Get cookies.txt LOCALLY" browser extension) taken while logged
-        in. Stored on this device only — never sent anywhere but the
-        platform itself.
-      </p>
-      <textarea id="cookies-textarea" rows="8" placeholder="# Netscape HTTP Cookie File&#10;.instagram.com&#9;TRUE&#9;/&#9;TRUE&#9;0&#9;sessionid&#9;..."></textarea>
-      <div class="modal-actions">
-        <button id="cookies-clear-btn" type="button" class="paste-btn">Clear</button>
-        <button id="cookies-close-btn" type="button" class="paste-btn">Close</button>
-        <button id="cookies-save-btn" type="button" class="dl-btn">Save</button>
-      </div>
-    </div>
-  </div>
 
   <main>
     <header>
@@ -789,9 +787,8 @@
     <div id="status" class="status" role="status" style="display:none"></div>
     <div id="error" class="error-box" role="alert" style="display:none"></div>
     <div id="ffmpeg-banner" class="ffmpeg-banner" role="status" style="display:none">
-      ffmpeg wasn't found on PATH — downloads are limited to progressive
-      (pre-merged) formats and MP3 conversion is unavailable. Install ffmpeg
-      and add it to PATH for 1080p+ and MP3 support.
+      This server can't find FFmpeg, so merged video and MP3 downloads will
+      fail. The operator needs to install FFmpeg (see docs/deployment.md).
     </div>
 
     <div id="skeleton" class="result-card" style="display:none" aria-hidden="true">
@@ -829,32 +826,31 @@
           Namao is a personal-use downloader for YouTube, Facebook, TikTok,
           X (Twitter), and Instagram. Paste a link, and it reads every
           quality the video was actually uploaded in — from its original
-          resolution down to 360p — plus an audio-only MP3 option.
+          resolution down to whatever the source offers — plus an audio-only MP3 option.
         </p>
         <p>
-          Everything runs locally on your own machine through
-          <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a>.
-          No account, no ads, and nothing is ever uploaded to a third-party
-          server — the video goes straight from the source to your browser.
+          Downloads run on the server you host it on, through
+          <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a>
+          and FFmpeg. No account, no ads, no paid third-party API.
         </p>
       </div>
       <div class="faq-col">
         <h2 class="section-title">Frequently Asked Questions</h2>
         <details class="faq-item">
           <summary>Where do downloads get saved?</summary>
-          <p>Wherever your browser saves downloads by default — Namao just hands the file to the browser, the same as any other download link.</p>
+          <p>Wherever your browser saves downloads by default. When a job finishes, Namao offers the verified file as a normal browser download.</p>
         </details>
         <details class="faq-item">
           <summary>Can I download audio only?</summary>
-          <p>Yes — pick the "Audio only" row in the quality list. It comes out as MP3 if ffmpeg is installed, or M4A otherwise.</p>
+          <p>Yes — pick the "Audio only" row in the quality list. It is converted to MP3 on the server.</p>
         </details>
         <details class="faq-item">
-          <summary>Do I need ffmpeg?</summary>
-          <p>Only for 1080p+ merged video and MP3 conversion. Without it, Namao still works but is limited to progressive (pre-merged) formats.</p>
+          <summary>Why do some videos take a while?</summary>
+          <p>Higher resolutions are downloaded as separate video and audio streams and merged by FFmpeg, then checked before they are offered to you. The progress bar shows the real state of the job and you can cancel it at any time.</p>
         </details>
         <details class="faq-item">
           <summary>Does it store my videos anywhere?</summary>
-          <p>No. Each download uses a fresh temporary folder that's deleted the moment the file reaches your browser.</p>
+          <p>Only temporarily. Each job gets its own folder, which is deleted when it is cancelled, when it fails, and automatically after the retention period (one hour by default).</p>
         </details>
         <details class="faq-item">
           <summary>Which platforms are supported?</summary>
@@ -874,17 +870,17 @@
         <div class="feature-card">
           <div class="feature-icon">🎚️</div>
           <h3>Pick your quality</h3>
-          <p>Original quality down to 360p, or MP3/M4A audio only — whatever the video actually offers.</p>
+          <p>Every resolution the video actually offers, or MP3 audio only. A resolution that isn't available is never silently swapped for another.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔒</div>
-          <h3>Runs on your machine</h3>
-          <p>No accounts, no ads, no upload to a third-party server. Everything happens locally.</p>
+          <h3>Self-hosted</h3>
+          <p>No accounts, no ads, no paid downloading API. You run the server.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🧹</div>
           <h3>Nothing left behind</h3>
-          <p>Each download uses a fresh temp folder that's deleted the moment your browser has the file.</p>
+          <p>Each download uses its own temp folder, removed on cancel, failure, or after the retention period.</p>
         </div>
       </div>
     </section>
@@ -917,7 +913,7 @@
           <span class="step-num">4</span>
           <div class="step-body">
             <strong>Download</strong>
-            <p>Your browser handles the save — no extra windows, no redirects.</p>
+            <p>Watch real progress, cancel if you like, and save the finished file with your browser.</p>
           </div>
         </li>
       </ol>
@@ -926,366 +922,6 @@
     <footer>Personal-use tool. Respect creators and platform terms.</footer>
   </main>
 
-<script>
-  // Mirrors the backend's detect_platform() so the UI can react instantly,
-  // before the network round-trip even starts.
-  const PLATFORM_PATTERNS = {
-    youtube: /(youtube\.com|youtu\.be)/i,
-    facebook: /(facebook\.com|fb\.watch|fb\.com)/i,
-    tiktok: /([a-z]{2}\.)?tiktok\.com/i,
-    twitter: /(twitter\.com|x\.com)/i,
-    instagram: /instagram\.com/i,
-  };
-
-  const PLATFORM_LABELS = {
-    youtube: "YouTube",
-    facebook: "Facebook",
-    tiktok: "TikTok",
-    twitter: "X",
-    instagram: "Instagram",
-  };
-
-  const PLATFORM_COLORS = {
-    youtube: "#ff0033",
-    facebook: "#0866ff",
-    tiktok: "#0eb8b8",
-    twitter: "#7c8591",
-    instagram: "#e1306c",
-  };
-  const NEUTRAL_COLOR = "#52525b";
-
-  function detectPlatform(url) {
-    for (const [name, pattern] of Object.entries(PLATFORM_PATTERNS)) {
-      if (pattern.test(url)) return name;
-    }
-    return null;
-  }
-
-  const urlInput = document.getElementById("url");
-  const platformPill = document.getElementById("platform-pill");
-  const pasteBtn = document.getElementById("paste-btn");
-  const fetchBtn = document.getElementById("fetch-btn");
-  const statusEl = document.getElementById("status");
-  const errorEl = document.getElementById("error");
-  const ffmpegBanner = document.getElementById("ffmpeg-banner");
-  const resultEl = document.getElementById("result");
-  const skeletonEl = document.getElementById("skeleton");
-  const thumbEl = document.getElementById("thumb");
-  const titleEl = document.getElementById("title");
-  const subEl = document.getElementById("sub");
-  const qualitiesEl = document.getElementById("qualities");
-  const themeColorMeta = document.getElementById("theme-color-meta");
-  const themeToggleBtn = document.getElementById("theme-toggle");
-
-  function applyPlatformTint() {
-    const platform = detectPlatform(urlInput.value.trim());
-    if (platform) {
-      document.body.setAttribute("data-platform", platform);
-      platformPill.textContent = PLATFORM_LABELS[platform];
-      platformPill.classList.add("show");
-      themeColorMeta.setAttribute("content", PLATFORM_COLORS[platform]);
-    } else {
-      document.body.setAttribute("data-platform", "");
-      platformPill.classList.remove("show");
-      themeColorMeta.setAttribute("content", NEUTRAL_COLOR);
-    }
-  }
-
-  urlInput.addEventListener("input", applyPlatformTint);
-
-  // Dark is the deliberate default; the toggle persists an explicit choice.
-  const THEME_KEY = "namao-theme";
-
-  function applyTheme(theme) {
-    if (theme === "light") {
-      document.documentElement.setAttribute("data-theme", "light");
-      themeToggleBtn.textContent = "☀️";
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-      themeToggleBtn.textContent = "🌙";
-    }
-  }
-
-  applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
-
-  themeToggleBtn.addEventListener("click", () => {
-    const isLight = document.documentElement.getAttribute("data-theme") === "light";
-    const next = isLight ? "dark" : "light";
-    localStorage.setItem(THEME_KEY, next);
-    applyTheme(next);
-  });
-
-  pasteBtn.addEventListener("click", async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        urlInput.value = text.trim();
-        applyPlatformTint();
-        urlInput.focus();
-      }
-    } catch (err) {
-      showError("Couldn't read the clipboard automatically — paste with Ctrl+V instead.");
-    }
-  });
-
-  // Cookie manager — Android app only (main.py/the browser version has no
-  // equivalent, so this whole block is a no-op there).
-  const cookiesBtn = document.getElementById("cookies-btn");
-  const cookiesModal = document.getElementById("cookies-modal");
-  const cookiesTextarea = document.getElementById("cookies-textarea");
-  const cookiesSaveBtn = document.getElementById("cookies-save-btn");
-  const cookiesClearBtn = document.getElementById("cookies-clear-btn");
-  const cookiesCloseBtn = document.getElementById("cookies-close-btn");
-
-  function refreshCookiesBadge() {
-    const has = window.NamaoBridge.hasCookies();
-    cookiesBtn.textContent = has ? "🍪✓" : "🍪";
-  }
-
-  if (window.NamaoBridge) {
-    cookiesBtn.style.display = "inline-flex";
-    refreshCookiesBadge();
-  }
-
-  cookiesBtn.addEventListener("click", () => {
-    cookiesTextarea.value = window.NamaoBridge.getCookies();
-    cookiesModal.style.display = "flex";
-  });
-
-  cookiesCloseBtn.addEventListener("click", () => {
-    cookiesModal.style.display = "none";
-  });
-
-  cookiesSaveBtn.addEventListener("click", () => {
-    window.NamaoBridge.saveCookies(cookiesTextarea.value);
-    refreshCookiesBadge();
-    cookiesModal.style.display = "none";
-  });
-
-  cookiesClearBtn.addEventListener("click", () => {
-    window.NamaoBridge.saveCookies("");
-    cookiesTextarea.value = "";
-    refreshCookiesBadge();
-  });
-
-  // Download folder picker — Android app only. The actual folder pick
-  // happens in a system UI outside the WebView, so the result comes back
-  // asynchronously via window.__namaoFolderChosen rather than a return value.
-  const folderBtn = document.getElementById("folder-btn");
-
-  window.__namaoFolderChosen = function (displayName) {
-    folderBtn.title = `Downloads save to: ${displayName}`;
-  };
-
-  if (window.NamaoBridge) {
-    folderBtn.style.display = "inline-flex";
-    window.__namaoFolderChosen(window.NamaoBridge.getDownloadFolderName());
-  }
-
-  folderBtn.addEventListener("click", () => {
-    window.NamaoBridge.pickDownloadFolder();
-  });
-
-  function formatDuration(seconds) {
-    seconds = Math.round(seconds || 0);
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    const pad = (n) => String(n).padStart(2, "0");
-    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-  }
-
-  function showStatus(text) {
-    statusEl.style.display = "block";
-    statusEl.innerHTML = `<span class="spinner"></span>${text}`;
-  }
-
-  function hideStatus() {
-    statusEl.style.display = "none";
-  }
-
-  function showError(text) {
-    errorEl.style.display = "block";
-    errorEl.textContent = text;
-  }
-
-  function hideError() {
-    errorEl.style.display = "none";
-  }
-
-  function renderResult(data, sourceUrl) {
-    resultEl.style.display = "block";
-    ffmpegBanner.style.display = data.ffmpeg ? "none" : "block";
-
-    thumbEl.src = data.thumbnail || "";
-    titleEl.textContent = data.title;
-    const bits = [data.uploader, formatDuration(data.duration)].filter(Boolean);
-    subEl.textContent = bits.join(" · ");
-
-    qualitiesEl.innerHTML = "";
-    for (const q of data.qualities) {
-      const row = document.createElement("div");
-      row.className = "quality-row";
-
-      const label = document.createElement("span");
-      label.className = "quality-label";
-      label.textContent = q.label;
-      row.appendChild(label);
-
-      if (q.note) {
-        const note = document.createElement("span");
-        note.className = "quality-note";
-        note.textContent = q.note;
-        row.appendChild(note);
-      }
-
-      const size = document.createElement("span");
-      size.className = "quality-size";
-      size.textContent = q.size || "size unknown";
-      row.appendChild(size);
-
-      if (window.NamaoBridge) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "dl-btn";
-        btn.textContent = "Download";
-        btn.addEventListener("click", () => {
-          btn.disabled = true;
-          btn.textContent = "0%";
-          bridgeDownload(sourceUrl, q.id, (percent) => {
-            btn.textContent = `${Math.round(percent)}%`;
-          })
-            .then((filename) => {
-              btn.textContent = "Saved ✓";
-              showStatus(`Saved to Downloads/Namao/${filename}`);
-              setTimeout(hideStatus, 4000);
-            })
-            .catch((err) => {
-              btn.textContent = "Download";
-              btn.disabled = false;
-              showError(err.message || "Download failed.");
-            });
-        });
-        row.appendChild(btn);
-      } else {
-        const link = document.createElement("a");
-        link.className = "dl-btn";
-        link.textContent = "Download";
-        link.href = `/api/download?url=${encodeURIComponent(sourceUrl)}&quality=${encodeURIComponent(q.id)}`;
-        row.appendChild(link);
-      }
-
-      qualitiesEl.appendChild(row);
-    }
-  }
-
-  async function fetchInfo() {
-    const url = urlInput.value.trim();
-    hideError();
-    resultEl.style.display = "none";
-
-    if (!url) {
-      showError("Paste a video link first.");
-      return;
-    }
-    if (!detectPlatform(url)) {
-      showError(
-        "That link doesn't look like YouTube, Facebook, TikTok, X/Twitter, or Instagram."
-      );
-      return;
-    }
-
-    fetchBtn.disabled = true;
-    urlInput.disabled = true;
-    showStatus("Reading video info…");
-    skeletonEl.style.display = "block";
-
-    try {
-      let data;
-      if (window.NamaoBridge) {
-        data = await bridgeFetchInfo(url);
-      } else {
-        const res = await fetch("/api/info", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-        });
-        data = await res.json();
-        if (!res.ok) {
-          showError(data.detail || "Something went wrong reading that link.");
-          return;
-        }
-      }
-      renderResult(data, url);
-    } catch (err) {
-      showError(err.message || "Couldn't reach the server. Is it still running?");
-    } finally {
-      hideStatus();
-      skeletonEl.style.display = "none";
-      fetchBtn.disabled = false;
-      urlInput.disabled = false;
-    }
-  }
-
-  fetchBtn.addEventListener("click", fetchInfo);
-  urlInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") fetchInfo();
-  });
-
-  // ---------------------------------------------------------------------
-  // Android bridge — only present when this page is loaded inside the
-  // standalone Namao app (MainActivity.kt injects window.NamaoBridge).
-  // In a normal browser this whole block is inert and fetchInfo()/
-  // renderResult() above fall back to the FastAPI /api/* calls untouched.
-  // ---------------------------------------------------------------------
-
-  let bridgeCallCounter = 0;
-  const bridgePending = {};
-
-  window.__namaoInfoResolve = function (id, jsonString) {
-    const call = bridgePending[id];
-    if (call) {
-      delete bridgePending[id];
-      call.resolve(JSON.parse(jsonString));
-    }
-  };
-
-  window.__namaoReject = function (id, message) {
-    const call = bridgePending[id];
-    if (call) {
-      delete bridgePending[id];
-      call.reject(new Error(message));
-    }
-  };
-
-  window.__namaoDownloadResolve = function (id, filename) {
-    const call = bridgePending[id];
-    if (call) {
-      delete bridgePending[id];
-      call.resolve(filename);
-    }
-  };
-
-  window.__namaoProgress = function (id, percent) {
-    const call = bridgePending[id];
-    if (call && call.onProgress) call.onProgress(percent);
-  };
-
-  function bridgeFetchInfo(url) {
-    return new Promise((resolve, reject) => {
-      const id = "c" + (++bridgeCallCounter);
-      bridgePending[id] = { resolve, reject };
-      window.NamaoBridge.fetchInfo(url, id);
-    });
-  }
-
-  function bridgeDownload(url, quality, onProgress) {
-    return new Promise((resolve, reject) => {
-      const id = "c" + (++bridgeCallCounter);
-      bridgePending[id] = { resolve, reject, onProgress };
-      window.NamaoBridge.download(url, quality, id);
-    });
-  }
-</script>
+<script src="app.js"></script>
 </body>
 </html>

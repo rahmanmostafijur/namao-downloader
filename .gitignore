@@ -11,3 +11,20 @@ android/local.properties
 *.aab
 !/Namao.apk
 .DS_Store
+.claude
+
+# Namao runtime state and secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+.coverage
+
+# Mobile (Expo): dependencies and generated artifacts
+mobile/node_modules/
+mobile/android/
+mobile/ios/
+mobile/dist/
+mobile/.expo/

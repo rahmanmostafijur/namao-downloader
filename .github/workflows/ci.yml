@@ -1,0 +1,122 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:  # lets a maintainer run CI on bot-created PRs (GITHUB_TOKEN PRs don't trigger it)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: backend + web tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: FFmpeg and Deno (versions are checked below, not assumed)
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          curl -fsSL -o deno.zip https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip
+          echo "c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490  deno.zip" | sha256sum -c -
+          unzip -q deno.zip -d "$HOME/.local/bin" && chmod +x "$HOME/.local/bin/deno"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: ffmpeg -version | head -1 && ffprobe -version | head -1 && "$HOME/.local/bin/deno" --version | head -1
+      - run: pip install -r requirements-dev.txt
+      - name: Python tests (real yt-dlp + FFmpeg against a local DASH server; no internet needed)
+        run: python -m pytest -p no:logging --cov=namao --cov-fail-under=80 -rs
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Web client tests
+        run: node --test "tests/web/*.test.js"
+
+  docker:
+    name: image builds and passes readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build (the Dockerfile verifies Deno, FFmpeg, FFprobe and yt-dlp-ejs)
+        run: docker build -t namao:ci .
+      - name: Start single-process mode and wait for /health/ready
+        run: |
+          docker run -d --name namao -p 8000:8000 -e NAMAO_EMBEDDED_WORKER=1 namao:ci
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/ready.json -w '%{http_code}' http://127.0.0.1:8000/health/ready || true)
+            [ "$code" = "200" ] && break; sleep 2
+          done
+          cat /tmp/ready.json; echo; [ "$code" = "200" ]
+      - if: failure()
+        run: docker logs namao | tail -50
+
+  desktop:
+    name: desktop build (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: FFmpeg
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg ;;
+            macOS)   brew install ffmpeg ;;
+            Windows) choco install ffmpeg -y --no-progress ;;
+          esac
+      - run: pip install -r requirements-desktop.txt
+      - run: pyinstaller Namao.spec --noconfirm
+      - name: Self-check the packaged app (engine, EJS metadata, FFmpeg/FFprobe). A JS runtime is optional here.
+        shell: bash
+        env:
+          NAMAO_REQUIRE_JS_RUNTIME: "0"
+        run: |
+          exe=dist/Namao; [ -f dist/Namao.exe ] && exe=dist/Namao.exe
+          "$exe" --check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: namao-${{ runner.os }}
+          path: dist/Namao*
+
+  mobile:
+    name: mobile client (typecheck, tests, JS bundles)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: CI=1 npx expo export --platform android --platform ios --output-dir "$RUNNER_TEMP/mobile-dist"
+      # Native builds (APK/IPA) are not part of CI yet: they need the Android SDK / Xcode (or EAS).
