@@ -45,7 +45,7 @@ diagnostics). See [docs/deployment.md](docs/deployment.md#desktop-app).
 The old single-file app downloaded inside the HTTP request, with an unpinned yt-dlp and no checks. YouTube downloads
 failed with HTTP 403 on its stale yt-dlp. Now: a pinned and *verified* dependency chain, an engine interface, durable
 background jobs with real progress/cancel/retry, normalized failure codes, SSRF and input hardening, Docker, an update
-and rollback procedure, and 346 + 16 + 17 automated tests. Read the evidence in [docs/upgrade-audit.md](docs/upgrade-audit.md).
+and rollback procedure, and 362 + 16 + 17 automated tests (Python + web + mobile). Read the evidence in [docs/upgrade-audit.md](docs/upgrade-audit.md).
 
 ## Documentation
 

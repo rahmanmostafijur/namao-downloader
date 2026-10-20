@@ -19,12 +19,12 @@ environment**; their YAML parses and `docker compose config` validates, nothing 
 
 | Suite | Result |
 |---|---|
-| Python (`tests/`) | **346 passed**, 4 skipped (the opt-in live tests), 93 % line coverage of `namao/` |
+| Python (`tests/`) | **362 passed**, 5 skipped (4 opt-in live tests; 1 symlink test that needs privileges on Windows), 93 % line coverage of `namao/` |
 | Python live (`NAMAO_LIVE_TESTS=1`) | 4 passed earlier the same day on the pinned nightly and on 2026.8.19; later runs from the same IPv4 address were throttled by YouTube (see download-reliability.md) |
 | Web client (`node --test`) | 16 passed |
 | Mobile (`jest`) | 17 passed; strict `tsc` clean; Metro bundles for android + ios built; Android `expo prebuild` ok |
 | Docker | image built; `api` + `worker` healthy; `/health/ready` ready with Deno 2.9.7, FFmpeg 5.1.9; real 360p download, graceful-stop → `interrupted`, drain/rebuild/resume exercised |
-| Desktop (Windows) | `Namao.exe` built (28 MB); `--check` ok; real merge of a local DASH stream through the frozen app; save-to-folder; 401/403 guards |
+| Desktop (Windows) | `Namao.exe` built (28 MB, rebuilt after the final changes); `--check` ok; no-token 403 then token 303 + cookie; real merge of a local DASH stream through the frozen app; save-to-folder; 401/403 guards |
 | Before the upgrade | **no Python tests existed**; Android unit tests were not runnable (no SDK) |
 
 Not run: macOS/Linux desktop builds, iOS anything, Android native build/instrumented tests, GitHub Actions, any
@@ -42,7 +42,7 @@ Facebook/TikTok/Instagram download (no rights-cleared assets).
 | `test_api.py`, `test_hardening.py` | Envelope, auth, quotas, idempotency, SSE caps, metadata timeout/cache, file delivery and traversal, proxy/IP handling, CSP, docs gating, schema drift. |
 | `test_engine_integration.py` | **Real yt-dlp + FFmpeg + FFprobe** on a local DASH server (video-only and audio-only streams): merge, heights, MP3, progress monotonic, cancel, deadline, size/duration limits, broken segments, missing FFmpeg, generic extractor blocked, playlist/profile URLs refused, verification of bad files. |
 | `test_pipeline_e2e.py` | HTTP → SQLite → worker → engine → file: success, unavailable height, missing source, cancel cleanup, expiry, concurrent jobs. |
-| `test_desktop.py` | Host/header guards, folder validation, preferences, never-overwrite saves, concurrent saves, open-folder ignores client paths. |
+| `test_desktop.py` | Host/header guards (strict Host regex), per-user token to HttpOnly cookie, folder validation (home-only, no hidden/AppData/Library), preferences, never-overwrite saves, concurrent saves, no-hardlink fallback, open-folder ignores client paths. |
 | `test_engine_update.py` | Pin parsing/rewrite, promote/rollback, PyPI-only fetches, repo pins match the installed engine. |
 | `test_live_youtube.py` | Opt-in real-platform smoke; a platform block of the network is a **skip with a reason**, never a pass or a regression. |
 

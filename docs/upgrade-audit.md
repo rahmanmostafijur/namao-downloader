@@ -170,7 +170,9 @@ confirms the earlier hypothesis that a server's address can be refused regardles
 bugs, all fixed with regression tests (see `tests/test_hardening.py`): a retry racing a cancel left jobs stuck in
 `queued`; heartbeats starved by slow cleanup could get healthy jobs reaped; non-atomic queue limits; idempotency keys
 shared across clients; proxy-header rate-limit bypass; uncapped SSE; an empty API key silently disabling auth;
-redaction gaps; a crash on IPv4 client addresses; a save-to-folder race. Accepted residual risks are listed in
+redaction gaps; a crash on IPv4 client addresses; a save-to-folder race. A second review of the desktop/ops/CI/mobile
+code led to per-user desktop auth, a strict Host check, stricter folder rules, split CI permissions with SHA-pinned actions,
+and size-verified mobile downloads (a failed Android transfer can leave a partial file). Accepted residual risks are listed in
 [architecture.md](architecture.md#security-model).
 
 **Not verified here:** macOS/Linux desktop builds, anything iOS, native Android builds, GitHub Actions, the Caddy

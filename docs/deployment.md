@@ -42,7 +42,8 @@ docker compose --profile public up -d
 ```
 
 Caddy obtains and renews certificates, disables buffering for the progress stream, hides `/health/ready`, and
-appends the real client address. Without `NAMAO_TRUST_PROXY` every request looks like it comes from the proxy. An
+appends the real client address. The Caddyfile passes `caddy validate`; its live behaviour (certificates, SSE, forwarded
+headers) was **not** exercised here. Without `NAMAO_TRUST_PROXY` every request looks like it comes from the proxy. An
 **empty** `NAMAO_API_KEY` is rejected at startup rather than silently disabling auth.
 
 For a public service also: restrict the worker's outbound traffic to the public internet (block private ranges and
@@ -89,7 +90,9 @@ NAMAO_EMBEDDED_WORKER=1 venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 `pyinstaller Namao.spec` (from a venv with `requirements-desktop.txt`) builds `dist/Namao[.exe]` **on the OS you
 target**. Optional: put `ffmpeg`, `ffprobe` and `deno` (official releases, checksums verified by you) into
 `desktop-bin/` first and they are bundled and preferred over `PATH`. `Namao --check` prints the dependency
-diagnostics. Data lives in `%LOCALAPPDATA%\Namao`, `~/Library/Application Support/Namao` or `~/.local/share/Namao`.
+diagnostics. Data lives in `%LOCALAPPDATA%\Namao`, `~/Library/Application Support/Namao` or `~/.local/share/Namao`, including a
+random `desktop-token`: the launcher opens the browser with it once and the server turns it into a cookie, so other
+user accounts on the same machine cannot use your instance.
 
 Build status: **Windows built and run end to end** on this branch (frozen yt-dlp + EJS + FFmpeg downloaded and
 merged a real stream; the desktop endpoints enforced their guards). **macOS and Linux builds are defined in

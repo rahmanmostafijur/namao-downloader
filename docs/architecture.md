@@ -27,7 +27,7 @@ exposes a job API; the web, desktop and mobile clients all use it. Background: [
 | Runner | `namao/jobs/runner.py` | One job through the lifecycle; retries, cleanup, verification gate. |
 | Worker | `namao/worker.py` | N job threads + heartbeat thread + maintenance thread; drain mode. |
 | API | `namao/api/app.py` | v1 routes, health, rate limits, SSE, file delivery, error envelope. |
-| Desktop mode | `namao/desktop.py`, `launcher.py` | Output-folder preference, save-to-folder, loopback guards. |
+| Desktop mode | `namao/desktop.py`, `launcher.py` | Output-folder preference, save-to-folder, loopback guards, per-user token. |
 | Ops | `namao/ops.py` | `status`, `drain`, `resume`. |
 
 ## Job lifecycle
@@ -113,7 +113,14 @@ Untrusted: submitted URLs, redirects, extracted metadata and titles, filenames, 
   separators, controls, bidi), delivery checks the resolved path stays inside the job directory.
 * Logs and stored errors pass through `redact` (URLs reduced to host, token-like pairs, bearer tokens, paths).
   The source URL's query string is erased from the database once the job's files are deleted.
+* Desktop mode (a local server every website the user visits can reach): Host allowlist against DNS rebinding; desktop
+  endpoints need a custom header (forces a CORS preflight, and no CORS headers are served); a per-user token kept in the
+  user's own app-data folder is exchanged for an HttpOnly, SameSite=Strict cookie, so other accounts on the same machine
+  cannot drive the app; the output folder must be inside the home folder (not hidden, not AppData/Library); saves never
+  overwrite.
 * Containers: non-root, read-only root filesystem, no capabilities, resource limits.
+* CI: the job that installs and runs unreviewed upstream code (engine candidate) has read-only permissions and no stored
+  credentials; a separate job that can write only runs this repository's script. Actions are pinned by commit SHA.
 
 **Residual risks (accepted, documented):**
 
