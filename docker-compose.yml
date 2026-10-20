@@ -11,7 +11,9 @@ x-namao: &namao
   build:
     context: .
   image: namao:local
-  env_file: .env
+  env_file:
+    - path: .env
+      required: false  # defaults are used until you create one
   environment:
     NAMAO_DATA_DIR: /data
   volumes:

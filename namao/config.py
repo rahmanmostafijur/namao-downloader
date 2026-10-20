@@ -98,6 +98,7 @@ class Settings:
     engine_stale_days: int = 90  # upstream itself warns after 90 days
     # --- deployment --------------------------------------------------------
     embedded_worker: bool = False
+    desktop_mode: bool = False  # local desktop app: loopback only, adds output-folder features
     cors_origins: tuple[str, ...] = field(default_factory=tuple)
     # --- test-only escape hatches (never enable in production) -------------
     allow_private_networks: bool = False
@@ -200,6 +201,7 @@ def _build_settings(defaults: Settings, bin_dir: str | None) -> Settings:
         concurrent_fragments=max(1, _env_int("CONCURRENT_FRAGMENTS", defaults.concurrent_fragments)),
         engine_stale_days=_env_int("ENGINE_STALE_DAYS", defaults.engine_stale_days),
         embedded_worker=_env_bool("EMBEDDED_WORKER", defaults.embedded_worker),
+        desktop_mode=_env_bool("DESKTOP_MODE", defaults.desktop_mode),
         cors_origins=_env_list("CORS_ORIGINS"),
         allow_private_networks=_env_bool("ALLOW_PRIVATE_NETWORKS", False),
         extra_allowed_hosts=_env_list("EXTRA_ALLOWED_HOSTS"),

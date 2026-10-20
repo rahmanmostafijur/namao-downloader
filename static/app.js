@@ -13,6 +13,7 @@
   "use strict";
 
   var TERMINAL = ["completed", "failed", "cancelled", "interrupted"];
+  var DESKTOP_HEADER = { "X-Namao-Desktop": "1" };
   var STATUS_LABELS = {
     queued: "Waiting in queue…",
     validating: "Checking link…",
@@ -175,6 +176,20 @@
       cancel: function (id) {
         return request("POST", prefix + "/" + encodeURIComponent(id) + "/cancel");
       },
+      // Desktop app only (the routes exist when the server runs in desktop mode).
+      // The custom header forces a CORS preflight, so other websites cannot call these.
+      desktopPrefs: function () {
+        return request("GET", "/api/v1/desktop/preferences", undefined, DESKTOP_HEADER);
+      },
+      desktopSetPrefs: function (outputDir, autoSave) {
+        return request("PUT", "/api/v1/desktop/preferences", { output_dir: outputDir, auto_save: autoSave }, DESKTOP_HEADER);
+      },
+      desktopSave: function (id) {
+        return request("POST", "/api/v1/desktop/jobs/" + encodeURIComponent(id) + "/save", undefined, DESKTOP_HEADER);
+      },
+      desktopOpenFolder: function () {
+        return request("POST", "/api/v1/desktop/open-folder", undefined, DESKTOP_HEADER);
+      },
       fileUrl: function (id) {
         return base + prefix + "/" + encodeURIComponent(id) + "/file";
       },
@@ -287,6 +302,44 @@
     var PLATFORM_COLORS = { youtube: "#ff0033", facebook: "#0866ff", tiktok: "#0eb8b8", twitter: "#7c8591", instagram: "#e1306c" };
     var NEUTRAL = "#52525b";
     var watchers = [];
+    var desktop = null; // {output_dir, auto_save} when running inside the desktop app
+
+    function setupDesktop() {
+      api
+        .desktopPrefs()
+        .then(function (prefs) {
+          desktop = prefs;
+          var actions = doc.querySelector(".nav-actions");
+          if (!actions) return;
+          var folderBtn = doc.createElement("button");
+          folderBtn.type = "button";
+          folderBtn.className = "icon-btn";
+          folderBtn.textContent = "📁";
+          folderBtn.setAttribute("aria-label", "Choose download folder");
+          function refreshTitle() {
+            folderBtn.title = "Downloads are saved to: " + desktop.output_dir;
+          }
+          refreshTitle();
+          folderBtn.addEventListener("click", function () {
+            var chosen = doc.defaultView.prompt("Save finished downloads to this folder (inside your home folder):", desktop.output_dir);
+            if (!chosen || chosen === desktop.output_dir) return;
+            api
+              .desktopSetPrefs(chosen, desktop.auto_save)
+              .then(function (updated) {
+                desktop = updated;
+                refreshTitle();
+                showError("");
+              })
+              .catch(function (err) {
+                showError(err.message);
+              });
+          });
+          actions.insertBefore(folderBtn, actions.firstChild);
+        })
+        .catch(function () {
+          /* not the desktop app: nothing to set up */
+        });
+    }
 
     function applyPlatformTint() {
       var platform = detectPlatform(urlInput.value);
@@ -425,6 +478,27 @@
         });
     }
 
+    function saveToFolder(action, jobId) {
+      var status = doc.createElement("span");
+      status.className = "job-detail";
+      status.textContent = "Saving to your folder…";
+      action.insertBefore(status, action.firstChild);
+      api
+        .desktopSave(jobId)
+        .then(function (saved) {
+          status.textContent = "Saved as " + saved.name;
+          action.appendChild(button("Open folder", "dl-btn", function () {
+            api.desktopOpenFolder().catch(function (err) {
+              showError(err.message);
+            });
+          }));
+        })
+        .catch(function (err) {
+          status.textContent = "";
+          showError(err.message);
+        });
+    }
+
     function showFailure(action, option, sourceUrl, message, canRetry) {
       action.textContent = "";
       var text = doc.createElement("span");
@@ -480,7 +554,11 @@
           link.href = api.fileUrl(jobId);
           link.setAttribute("download", job.result.filename || "video");
           action.appendChild(link);
-          link.click(); // the server only ever offers a file after FFprobe verification
+          if (desktop && desktop.auto_save) {
+            saveToFolder(action, jobId);
+          } else {
+            link.click(); // the server only ever offers a file after FFprobe verification
+          }
           return;
         }
         if (view.terminal) {
@@ -546,6 +624,7 @@
       if (e.key === "Enter") fetchInfo();
     });
     applyPlatformTint();
+    setupDesktop();
   }
 
   if (typeof document !== "undefined") {

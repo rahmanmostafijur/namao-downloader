@@ -1,0 +1,67 @@
+name: engine-update
+
+# Weekly: test the newest yt-dlp nightly as a *candidate* and, if the whole suite passes,
+# open a pull request that pins it. Never merges anything and never touches a running
+# deployment; a human reviews the PR, runs the live checklist, then deploys with
+# `python -m namao.ops drain` (docs/deployment.md).
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "stable or nightly"
+        default: nightly
+        type: choice
+        options: [nightly, stable]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: FFmpeg and Deno
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          curl -fsSL -o deno.zip https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip
+          echo "c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490  deno.zip" | sha256sum -c -
+          unzip -q deno.zip -d "$HOME/.local/bin" && chmod +x "$HOME/.local/bin/deno"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Compare the pin with upstream
+        run: python scripts/engine_update.py check | tee check.json
+      - name: Install the candidate in an isolated virtualenv
+        run: python scripts/engine_update.py candidate --channel "${{ inputs.channel || 'nightly' }}" --venv .candidate-venv | tee candidate.json
+      - name: Full regression suite on the candidate (live tests skip, with a reason, if this runner's network is blocked)
+        env:
+          NAMAO_ENGINE_CANDIDATE: "1"
+          NAMAO_LIVE_TESTS: "1"
+        run: .candidate-venv/bin/python -m pytest -p no:logging -rs | tee suite.txt
+      - name: Open a pull request pinning the tested candidate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(python -c "import json; print(json.load(open('candidate.json'))['version'])")
+          pinned=$(python -c "import json; print(json.load(open('check.json'))['pinned']['version'])")
+          if [ "$version" = "$pinned" ]; then echo "already pinned to $pinned"; exit 0; fi
+          python scripts/engine_update.py promote --version "$version"
+          branch="engine-update/$version"
+          git config user.name "namao-bot"; git config user.email "namao-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add requirements.txt requirements-known-good.txt
+          git commit -m "chore: pin yt-dlp $version after passing the regression suite"
+          git push origin "$branch"
+          skipped=$(grep -c "SKIPPED" suite.txt || true)
+          gh pr create --title "chore: yt-dlp $pinned -> $version" --body "Automated candidate test.
+
+          - Regression suite: **passed** on the candidate (see the workflow run).
+          - Live YouTube smoke tests skipped in this run: **$skipped** (skipped = this runner's network was blocked by the platform, which proves nothing either way).
+          - Previous pin kept in \`requirements-known-good.txt\` for rollback.
+
+          Before merging: run \`NAMAO_LIVE_TESTS=1 pytest tests/test_live_youtube.py\` from an unblocked network, then deploy with the drain procedure in docs/deployment.md."

@@ -245,3 +245,37 @@ test("client never injects server data as HTML", () => {
   assert.ok(/<script src="app.js">/.test(html), "script is external so CSP can forbid inline scripts");
   assert.ok(!/<script>/.test(html));
 });
+
+test("desktop client methods send the custom header and only the documented bodies", async () => {
+  const calls = [];
+  const api = app.createApi((url, options) => {
+    calls.push({ url, options });
+    return Promise.resolve(jsonResponse(200, { output_dir: "/home/u/Namao", auto_save: true, name: "a.mp4" }));
+  });
+  await api.desktopPrefs();
+  await api.desktopSetPrefs("/home/u/Videos", false);
+  await api.desktopSave("job/1");
+  await api.desktopOpenFolder();
+  assert.deepEqual(
+    calls.map((c) => [c.options.method, c.url]),
+    [
+      ["GET", "/api/v1/desktop/preferences"],
+      ["PUT", "/api/v1/desktop/preferences"],
+      ["POST", "/api/v1/desktop/jobs/job%2F1/save"],
+      ["POST", "/api/v1/desktop/open-folder"],
+    ]
+  );
+  for (const call of calls) assert.equal(call.options.headers["X-Namao-Desktop"], "1");
+  assert.deepEqual(JSON.parse(calls[1].options.body), { output_dir: "/home/u/Videos", auto_save: false });
+  assert.equal(calls[3].options.body, undefined, "open-folder takes no client-supplied path");
+});
+
+test("the normal download calls do not carry the desktop header", async () => {
+  let headers;
+  const api = app.createApi((url, options) => {
+    headers = options.headers;
+    return Promise.resolve(jsonResponse(200, {}));
+  });
+  await api.get("abc");
+  assert.equal(headers["X-Namao-Desktop"], undefined);
+});

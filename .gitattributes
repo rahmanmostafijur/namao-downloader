@@ -1,0 +1,7 @@
+* text=auto
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.m4s binary
+*.apk binary

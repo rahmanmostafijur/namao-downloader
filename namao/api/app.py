@@ -33,6 +33,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import __version__
 from ..config import Settings, load_settings
+from ..desktop import build_desktop_router, host_is_local
 from ..engine.base import DownloadEngine, MediaMetadata
 from ..engine.formats import build_format_options
 from ..engine.ytdlp import YtDlpEngine
@@ -265,6 +266,14 @@ def create_app(
     def fail(error: NamaoError, status_code: int | None = None) -> JSONResponse:
         return error_response(error, status_code, expose_detail=settings.expose_error_detail)
 
+    if settings.desktop_mode:
+        @app.middleware("http")
+        async def local_host_only(request: Request, call_next):
+            # DNS-rebinding defence: a page on evil.example resolving to 127.0.0.1 still sends Host: evil.example.
+            if not host_is_local(request.headers.get("host")):
+                return fail(NamaoError(ErrorCode.UNAUTHORIZED), 403)
+            return await call_next(request)
+
     @app.exception_handler(NamaoError)
     async def _namao_error(_request: Request, exc: NamaoError):
         return fail(exc)
@@ -462,6 +471,8 @@ def create_app(
         )
 
     app.include_router(v1)
+    if settings.desktop_mode:
+        app.include_router(build_desktop_router(settings, store, load_job))
 
     # ---------------------------------------------------------------- health
     @app.get("/health/live", tags=["health"])
