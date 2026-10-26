@@ -5,5 +5,5 @@ uvicorn[standard]==0.51.0
 # "[default]" pulls yt-dlp-ejs (YouTube JS-challenge solver scripts) and the
 # optional deps upstream recommends. A JS runtime (Deno preferred, Node >= 22)
 # and real ffmpeg/ffprobe binaries are NOT pip packages; see docs/deployment.md.
-yt-dlp[default]==2026.10.10.233141.dev0
+yt-dlp[default]==2026.10.23.233055.dev0
 yt-dlp-ejs==0.8.0
