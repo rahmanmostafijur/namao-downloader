@@ -3,7 +3,7 @@ description: "Namao (নামাও) - Android client for a self-hosted Namao v
 publish_to: 'none'
 
 # Keep in sync with the user-visible version. The native side reports versionName from this value.
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.13.4
