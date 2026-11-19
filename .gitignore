@@ -22,8 +22,8 @@ android/local.properties
 key.properties
 credentials.txt
 
-# Namao runtime state and secrets
-data/
+# Namao runtime state and secrets (anchored: must not match source folders such as mobile_flutter/lib/data)
+/data/
 .env
 .env.*
 !.env.example
