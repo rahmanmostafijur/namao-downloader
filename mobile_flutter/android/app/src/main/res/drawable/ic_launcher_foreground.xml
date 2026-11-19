@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Download arrow, the same mark as the web client's brand tile. Kept inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.8"
+        android:scaleY="1.8"
+        android:translateX="32.4"
+        android:translateY="32.4">
+        <path
+            android:pathData="M12,3 L12,15 M12,15 L7,10 M12,15 L17,10 M5,21 L19,21"
+            android:strokeColor="#1A1203"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

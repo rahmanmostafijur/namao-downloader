@@ -1,0 +1,3 @@
+tags:
+  integration:
+    description: Needs a running Namao server (see test/integration/real_server_test.dart).

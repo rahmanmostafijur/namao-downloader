@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand tokens (design/tokens.dart is the source of truth). -->
+    <color name="ic_launcher_background">#F5A524</color>
+    <!-- Window colour while Flutter starts: the light theme background. -->
+    <color name="namao_window_bg">#F6F5F2</color>
+</resources>

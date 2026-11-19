@@ -1,0 +1,21 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+coverage/
+*.iml
+.idea/
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/key.properties
+**/*.keystore
+**/*.jks
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Local verification output
+verification/

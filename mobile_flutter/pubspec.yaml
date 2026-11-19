@@ -1,0 +1,34 @@
+name: namao_app
+description: "Namao (নামাও) - Android client for a self-hosted Namao video download server."
+publish_to: 'none'
+
+# Keep in sync with the user-visible version. The native side reports versionName from this value.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.5.0
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+  flutter_secure_storage: ^11.2.0
+  cached_network_image: ^4.0.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    # Variable fonts (Google Fonts, SIL OFL 1.1). Bundled: no runtime network font loading.
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+    - family: BricolageGrotesque
+      fonts:
+        - asset: assets/fonts/BricolageGrotesque.ttf
