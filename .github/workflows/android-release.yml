@@ -126,7 +126,9 @@ jobs:
           if echo "$out" | grep -qi "Android Debug"; then
             echo "::error::The APK is signed with the DEBUG key. Refusing to publish."; exit 1
           fi
-          actual=$(echo "$out" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          # apksigner labels this line differently across versions ("Signer #1 ..." / "V2 Signer: ..."), so match
+          # on the stable part. Every signer certificate reported must be the expected one (sort -u -> exactly one value).
+          actual=$(echo "$out" | grep -E 'certificate SHA-256 digest:' | sed -E 's/.*digest:[[:space:]]*//' | tr -d ': \r' | tr 'A-F' 'a-f' | sort -u)
           expected=$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': \r\n' | tr 'A-F' 'a-f')
           if [ -z "$expected" ]; then
             echo "::error::Repository variable ANDROID_CERT_SHA256 is not set; cannot confirm the signing identity."; exit 1
