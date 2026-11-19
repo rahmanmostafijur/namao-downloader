@@ -6,7 +6,7 @@ import '../../design/surfaces.dart';
 import '../../design/tokens.dart';
 import '../../design/type.dart';
 
-/// Qualities exactly as the server listed them, grouped Video / Audio.
+/// The qualities the video really offers, grouped Video / Audio.
 class FormatList extends StatelessWidget {
   const FormatList({
     super.key,
@@ -25,21 +25,13 @@ class FormatList extends StatelessWidget {
     final audio = metadata.audioFormats;
     if (video.isEmpty && audio.isEmpty) {
       return const MessageBanner(
-        message: 'The server found no downloadable formats for this video.',
+        message: 'No downloadable formats were found for this video.',
         icon: Icons.info_outline_rounded,
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!metadata.ffmpeg)
-          const Padding(
-            padding: EdgeInsets.only(bottom: NamaoSpace.m),
-            child: MessageBanner(
-              message: 'This server has no FFmpeg, so formats that need merging will fail.',
-              icon: Icons.warning_amber_rounded,
-            ),
-          ),
         if (video.isNotEmpty)
           _Group(
             title: 'Video',

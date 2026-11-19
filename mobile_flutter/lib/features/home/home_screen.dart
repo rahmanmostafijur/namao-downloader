@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/url_tools.dart';
-import '../../data/providers.dart';
 import '../../design/surfaces.dart';
 import '../../design/tokens.dart';
 import '../../design/wordmark.dart';
@@ -70,34 +68,11 @@ class _HomeBody extends ConsumerWidget {
   }
 }
 
-class _Header extends ConsumerWidget {
+class _Header extends StatelessWidget {
   const _Header();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final url = ref.watch(connectionProvider.select((c) => c.url));
-    final p = context.palette;
-    return Row(
-      children: [
-        const Wordmark(size: 28),
-        const SizedBox(width: NamaoSpace.m),
-        if (url != null)
-          Expanded(
-            child: Semantics(
-              label: 'Server ${serverLabel(url)}',
-              child: Text(
-                serverLabel(url),
-                maxLines: 1,
-                textAlign: TextAlign.end,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: p.textDim),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => const Row(children: [Wordmark(size: 28)]);
 }
 
 class _GetFormatsButton extends ConsumerWidget {

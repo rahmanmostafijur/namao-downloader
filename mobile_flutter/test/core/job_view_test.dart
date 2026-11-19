@@ -9,11 +9,11 @@ import '../support/fakes.dart';
 void main() {
   group('status labels (shared terminology)', () {
     final expected = <JobStatus, String>{
-      JobStatus.queued: 'Waiting in queue…',
-      JobStatus.validating: 'Checking link…',
-      JobStatus.fetchingMetadata: 'Reading video info…',
-      JobStatus.merging: 'Merging audio and video…',
-      JobStatus.verifying: 'Verifying file…',
+      JobStatus.queued: 'Preparing your download…',
+      JobStatus.validating: 'Preparing your download…',
+      JobStatus.fetchingMetadata: 'Preparing your download…',
+      JobStatus.merging: 'Finishing…',
+      JobStatus.verifying: 'Finishing…',
       JobStatus.completed: 'Ready',
       JobStatus.failed: 'Failed',
       JobStatus.cancelled: 'Cancelled',
@@ -33,9 +33,13 @@ void main() {
       expect(describeJob(job).label, 'Downloading 42%');
     });
 
-    test('a retried queued job says which attempt it is', () {
-      final job = makeJob(status: JobStatus.queued, attempt: 1, maxAttempts: 3);
-      expect(describeJob(job).label, 'Retrying (attempt 2 of 3)…');
+    test('no label uses technical terms', () {
+      for (final status in JobStatus.values) {
+        final label = describeJob(makeJob(status: status)).label.toLowerCase();
+        for (final banned in ['server', 'queue', 'metadata', 'merg', 'verif', 'ffmpeg', 'yt-dlp']) {
+          expect(label, isNot(contains(banned)), reason: '${status.wire}: $label');
+        }
+      }
     });
   });
 

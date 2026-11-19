@@ -1,13 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart' show addTearDown;
-import 'package:namao_app/data/file_saver.dart';
 import 'package:namao_app/data/providers.dart';
-import 'package:namao_app/data/settings_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes.dart';
@@ -17,52 +14,40 @@ class TestHarness {
   TestHarness._({
     required this.api,
     required this.media,
-    required this.temp,
     required this.prefs,
     required this.overrides,
   });
 
   static Future<TestHarness> create({
     Map<String, Object> prefsValues = const {},
-    AppSettings? settings,
+    ThemeMode? themeMode,
     FakeApi? api,
     FakeNativeMedia? media,
   }) async {
-    SharedPreferences.setMockInitialValues(prefsValues);
+    SharedPreferences.setMockInitialValues({
+      ...prefsValues,
+      if (themeMode != null) 'settings.theme_mode': themeMode.name,
+    });
     final prefs = await SharedPreferences.getInstance();
     final fakeApi = api ?? FakeApi();
     final fakeMedia = media ?? FakeNativeMedia();
-    final temp = Directory.systemTemp.createTempSync('namao_harness');
     var keyCounter = 0;
     return TestHarness._(
       api: fakeApi,
       media: fakeMedia,
-      temp: temp,
       prefs: prefs,
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
-        initialSettingsProvider.overrideWithValue(
-          settings ?? configuredSettings(),
-        ),
-        secretStoreProvider.overrideWithValue(FakeSecretStore()),
-        apiFactoryProvider.overrideWithValue((url, key) => fakeApi),
+        apiProvider.overrideWithValue(fakeApi),
         nativeMediaProvider.overrideWithValue(fakeMedia),
         pollIntervalProvider.overrideWithValue(const Duration(milliseconds: 5)),
         idGeneratorProvider.overrideWithValue(() => 'key-${++keyCounter}'),
-        fileSaverProvider.overrideWith(
-          (ref) => FileSaver(
-            api: fakeApi,
-            media: fakeMedia,
-            tempDirectory: () => temp,
-          ),
-        ),
       ],
     );
   }
 
   final FakeApi api;
   final FakeNativeMedia media;
-  final Directory temp;
   final SharedPreferences prefs;
   final List<Override> overrides;
 
@@ -72,9 +57,7 @@ class TestHarness {
     return container;
   }
 
-  void dispose() {
-    if (temp.existsSync()) temp.deleteSync(recursive: true);
-  }
+  void dispose() => api.dispose();
 }
 
 /// Polls [condition] on the real event loop until it holds (or fails the test after [timeout]).

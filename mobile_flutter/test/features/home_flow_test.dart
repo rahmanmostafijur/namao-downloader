@@ -71,7 +71,7 @@ void main() {
     await tester.tap(find.text('View'));
     await settle(tester);
     expect(find.text('Sample video title'), findsOneWidget);
-    expect(find.text('Waiting in queue…'), findsOneWidget);
+    expect(find.text('Preparing your download…'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
   });
 
@@ -91,17 +91,25 @@ void main() {
   });
 
   testWidgets(
-    'unreachable server names the configured server; Retry recovers',
+    'a lost internet connection says so in plain words; Retry recovers',
     (tester) async {
       final h = await TestHarness.create();
       addTearDown(h.dispose);
-      h.api.metadataError = const ApiException.network();
+      h.api.metadataError = const ApiException(
+        code: 'network_transient',
+        message: 'Your internet connection was interrupted.',
+        retryable: true,
+      );
       await pumpNamao(tester, h);
       await tester.enterText(find.byType(TextField), 'https://youtu.be/abc');
       await settle(tester);
       await tester.tap(find.text('Get formats'));
       await settle(tester);
-      expect(find.textContaining("Can't reach 10.0.2.2:8000"), findsOneWidget);
+      expect(
+        find.text('Your internet connection was interrupted.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('server'), findsNothing);
 
       h.api.metadataError = null;
       await tester.tap(find.text('Retry'));
@@ -111,12 +119,11 @@ void main() {
   );
 
   testWidgets(
-    'a server error shows its message; non-retryable offers no Retry',
+    'a refusal shows its message; non-retryable offers no Retry',
     (tester) async {
       final h = await TestHarness.create();
       addTearDown(h.dispose);
       h.api.metadataError = const ApiException(
-        kind: ApiFailureKind.server,
         code: 'unsupported_content',
         message: 'Only single, non-live videos are supported.',
         status: 400,
@@ -134,7 +141,7 @@ void main() {
     },
   );
 
-  testWidgets('a failed Download keeps formats and reuses the key on retry', (
+  testWidgets('a failed Download keeps formats; the next tap starts a fresh one', (
     tester,
   ) async {
     final h = await TestHarness.create();
@@ -148,10 +155,14 @@ void main() {
     await tester.tap(find.text('1080p'));
     await settle(tester);
 
-    h.api.createResult = const ApiException.network();
+    h.api.createResult = const ApiException(
+      code: 'environment_unsupported',
+      message: "Namao couldn't get ready on this phone.",
+      retryable: true,
+    );
     await tester.tap(find.text('Download 1080p'));
     await settle(tester);
-    expect(find.textContaining("Can't reach"), findsWidgets);
+    expect(find.textContaining("couldn't get ready"), findsWidgets);
     expect(
       find.text('Download 1080p'),
       findsOneWidget,
@@ -163,8 +174,8 @@ void main() {
     await settle(tester);
     expect(h.api.idempotencyKeys, [
       'key-1',
-      'key-1',
-    ], reason: 'a repeat of a lost tap must not create a second job');
+      'key-2',
+    ], reason: 'each tap is its own download; nothing is sent over a network to lose');
     expect(find.text('Added to Downloads'), findsOneWidget);
   });
 }

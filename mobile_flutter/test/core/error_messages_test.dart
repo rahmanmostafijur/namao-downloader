@@ -4,13 +4,12 @@ import 'package:namao_app/core/error_messages.dart';
 import 'package:namao_app/core/models/api_error.dart';
 
 void main() {
-  ApiException server(
+  ApiException failure(
     String code,
     String message, {
     int status = 400,
     bool retryable = false,
   }) => ApiException(
-    kind: ApiFailureKind.server,
     code: code,
     message: message,
     status: status,
@@ -18,9 +17,9 @@ void main() {
   );
 
   group('presentApiError', () {
-    test('uses the server message verbatim (it is already user-safe)', () {
+    test('uses the message it was given (it is already user-safe)', () {
       final shown = presentApiError(
-        server('video_unavailable', 'This video is unavailable.'),
+        failure('video_unavailable', 'This video is unavailable.'),
       );
       expect(shown.message, 'This video is unavailable.');
       expect(shown.retryable, isFalse);
@@ -28,60 +27,43 @@ void main() {
 
     test('falls back to the code table when the message is blank', () {
       final shown = presentApiError(
-        server('queue_full', '  ', status: 503, retryable: true),
+        failure('network_transient', '  ', retryable: true),
       );
-      expect(shown.message, contains('busy'));
-      expect(shown.hint, isNotNull);
+      expect(shown.message, contains('connection'));
+      expect(shown.hint, contains('internet'));
       expect(shown.retryable, isTrue);
+      expect(shown.isConnectivity, isTrue);
     });
 
-    test('401 points at the API key in Settings', () {
-      final shown = presentApiError(
-        server('unauthorized', 'Missing or invalid credentials.', status: 401),
-      );
-      expect(shown.message, contains('API key'));
-      expect(shown.hint, contains('Settings'));
-    });
-
-    test('network and timeout errors name the configured server', () {
-      final network = presentApiError(
-        const ApiException.network(),
-        serverUrl: 'http://10.0.2.2:8000',
-      );
-      expect(network.message, contains('10.0.2.2:8000'));
-      expect(network.isConnectivity, isTrue);
-      expect(network.retryable, isTrue);
-
-      final timeout = presentApiError(
-        const ApiException.timeout(),
-        serverUrl: 'http://nas.local:8000',
-      );
-      expect(timeout.message, contains('nas.local:8000'));
-    });
-
-    test('network error without a configured server says "the server"', () {
-      expect(
-        presentApiError(const ApiException.network()).message,
-        contains('the server'),
-      );
-    });
-
-    test('bad response suggests checking the address', () {
-      final shown = presentApiError(const ApiException.badResponse());
-      expect(shown.hint, contains('Namao'));
-    });
-
-    test('unknown code with no message still says something', () {
-      final shown = presentApiError(server('brand_new_code', ''));
-      expect(shown.message, isNotEmpty);
+    test('an unknown code with no message gets the generic sentence', () {
+      final shown = presentApiError(failure('brand_new_code', ''));
+      expect(shown.message, genericFailureMessage);
+      expect(shown.isConnectivity, isFalse);
     });
 
     test('hints exist for actionable codes', () {
       expect(
-        presentApiError(server('file_too_large', 'x')).hint,
+        presentApiError(failure('file_too_large', 'x')).hint,
         contains('lower quality'),
       );
-      expect(presentApiError(server('auth_required', 'x')).hint, isNotNull);
+      expect(presentApiError(failure('auth_required', 'x')).hint, isNotNull);
+    });
+
+    test('no message mentions servers, keys or technical tools', () {
+      for (final code in [
+        'invalid_url', 'unsupported_platform', 'unsupported_content', 'invalid_quality',
+        'file_too_large', 'video_unavailable', 'auth_required', 'geo_restricted',
+        'source_rate_limited', 'access_blocked', 'format_unavailable', 'engine_outdated',
+        'extractor_broken', 'js_challenge_failed', 'environment_unsupported',
+        'network_transient', 'timeout', 'merge_failed', 'output_invalid', 'storage_full',
+        'metadata_failed', 'download_failed', 'cancelled', 'interrupted', 'expired',
+      ]) {
+        final shown = presentApiError(failure(code, ''));
+        final text = '${shown.message} ${shown.hint ?? ''}'.toLowerCase();
+        for (final banned in ['server', 'yt-dlp', 'ffmpeg', 'python', 'api key', 'backend']) {
+          expect(text, isNot(contains(banned)), reason: '$code mentions "$banned"');
+        }
+      }
     });
   });
 
@@ -100,7 +82,7 @@ void main() {
 
     test('missing error is a generic retryable failure', () {
       final shown = presentJobError(null);
-      expect(shown.message, 'The download failed.');
+      expect(shown.message, genericFailureMessage);
       expect(shown.retryable, isTrue);
     });
 
@@ -108,7 +90,7 @@ void main() {
       final shown = presentJobError(
         const ApiErrorBody(code: 'expired', message: ''),
       );
-      expect(shown.message, contains('expired'));
+      expect(shown.message, contains('no longer'));
       expect(shown.hint, contains('Retry'));
     });
   });

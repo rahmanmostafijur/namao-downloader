@@ -141,8 +141,13 @@ void main() {
 
   test('action errors say something useful', () {
     expect(
-      describeActionError(const ApiException.network()),
-      contains('reach'),
+      describeActionError(
+        const ApiException(
+          code: 'network_transient',
+          message: 'Your internet connection was interrupted.',
+        ),
+      ),
+      contains('connection'),
     );
     expect(
       describeActionError(StateError('x')),

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:namao_app/core/api/api_exception.dart';
@@ -15,6 +13,12 @@ import 'package:namao_app/features/downloads/downloads_state.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
+
+const ApiException _unreadable = ApiException(
+  code: 'environment_unsupported',
+  message: 'Not ready.',
+  retryable: true,
+);
 
 HistoryEntry seeded(
   String id, {
@@ -32,9 +36,7 @@ HistoryEntry seeded(
   job: makeJob(
     id: id,
     status: status,
-    result: status == JobStatus.completed
-        ? makeResult(id: id, sizeBytes: 8)
-        : null,
+    result: status == JobStatus.completed ? makeResult(sizeBytes: 8) : null,
   ),
   saveState: save,
   savedUri: savedUri,
@@ -69,7 +71,7 @@ void main() {
   tearDown(() => h.dispose());
 
   group('starting and tracking', () {
-    test('start adds an Active entry, polls real progress, auto-saves on completion', () async {
+    test('start adds an Active entry, tracks real progress, auto-saves on completion', () async {
       await boot();
       h.api.files['job1'] = List.generate(8, (i) => i);
       h.api.script('job1', [
@@ -118,7 +120,7 @@ void main() {
           'stopTransfer',
         ]),
       );
-      expect(h.temp.listSync(), isEmpty);
+      expect(h.api.hasWorkingFile('job1'), isFalse, reason: 'working copy released');
     });
 
     test('history is persisted as the state changes', () async {
@@ -155,7 +157,7 @@ void main() {
       expect(state().entries.length, 1);
     });
 
-    test('a failed server job ends in the Failed tab with its error', () async {
+    test('a failed job ends in the Failed tab with its error', () async {
       await boot();
       const error = ApiErrorBody(code: 'video_unavailable', message: 'Gone.');
       h.api.script('job1', [
@@ -172,7 +174,7 @@ void main() {
       );
       expect(state().entryFor('job1')!.job!.error!.message, 'Gone.');
       expect(
-        h.media.events,
+        h.media.events.where((e) => e.startsWith('save')),
         isEmpty,
         reason: 'nothing is saved for a failed job',
       );
@@ -180,13 +182,7 @@ void main() {
 
     test('create errors propagate to the caller and add nothing', () async {
       await boot();
-      h.api.createResult = const ApiException(
-        kind: ApiFailureKind.server,
-        code: 'queue_full',
-        message: 'Busy.',
-        status: 503,
-        retryable: true,
-      );
+      h.api.createResult = _unreadable;
       await expectLater(
         controller().start(
           sourceUrl: 'https://youtu.be/x',
@@ -201,13 +197,13 @@ void main() {
   });
 
   group('restore on launch', () {
-    test('active jobs resume polling and reach completion', () async {
+    test('active jobs resume tracking and reach completion', () async {
       h.api.files['j1'] = List.generate(8, (i) => i);
       h.api.script('j1', [
         makeJob(
           id: 'j1',
           status: JobStatus.completed,
-          result: makeResult(id: 'j1', sizeBytes: 8),
+          result: makeResult(sizeBytes: 8),
         ),
       ]);
       await boot([seeded('j1')]);
@@ -217,16 +213,16 @@ void main() {
       );
     });
 
-    test('a job the server forgot is marked expired, not successful', () async {
-      await boot([seeded('gone')]); // no script -> 404
+    test('a job whose record is gone is marked unavailable, not successful', () async {
+      await boot([seeded('gone')]); // no script -> not found
       await eventually(
-        () => state().entryFor('gone')!.serverGone,
-        reason: 'expiry detection',
+        () => state().entryFor('gone')!.jobGone,
+        reason: 'gone detection',
       );
       expect(state().entryFor('gone')!.tab, DownloadsTab.failed);
     });
 
-    test('a saved entry is never re-polled and stays saved even if the server forgot it', () async {
+    test('a saved entry is never re-checked and stays saved', () async {
       await boot([
         seeded(
           's',
@@ -239,55 +235,61 @@ void main() {
       expect(state().entryFor('s')!.tab, DownloadsTab.completed);
     });
 
-    test(
-      'an interrupted device transfer is detected and offers Retry save',
-      () async {
-        h.api.script('t', [
-          makeJob(
-            id: 't',
-            status: JobStatus.completed,
-            result: makeResult(id: 't', sizeBytes: 8),
-          ),
-        ]);
-        await boot([
-          seeded(
-            't',
-            status: JobStatus.completed,
-            save: SaveState.transferring,
-          ),
-        ]);
-        final entry = state().entryFor('t')!;
-        expect(entry.saveState, SaveState.failed);
-        expect(entry.saveError, interruptedTransferMessage);
-        expect(entry.needsSave, isTrue);
-        // It was not auto-restarted: the user decides.
-        expect(h.media.events, isEmpty);
+    test('an interrupted save is detected and offers Retry save', () async {
+      h.api.script('t', [
+        makeJob(
+          id: 't',
+          status: JobStatus.completed,
+          result: makeResult(sizeBytes: 8),
+        ),
+      ]);
+      await boot([
+        seeded('t', status: JobStatus.completed, save: SaveState.transferring),
+      ]);
+      final entry = state().entryFor('t')!;
+      expect(entry.saveState, SaveState.failed);
+      expect(entry.saveError, interruptedSaveMessage);
+      expect(entry.needsSave, isTrue);
+      // It was not auto-restarted: the user decides.
+      expect(h.media.events.where((e) => e.startsWith('save')), isEmpty);
 
-        h.api.files['t'] = List.generate(8, (i) => i);
-        controller().saveToDevice('t');
-        await eventually(
-          () => state().entryFor('t')!.isSaved,
-          reason: 'retry save',
-        );
-      },
-    );
-
-    test('stale temp files from a killed transfer are removed', () async {
-      File('${h.temp.path}/namao_dead.part').writeAsStringSync('partial');
-      await boot();
+      h.api.files['t'] = List.generate(8, (i) => i);
+      controller().saveToDevice('t');
       await eventually(
-        () => h.temp.listSync().isEmpty,
-        reason: 'stale file cleanup',
+        () => state().entryFor('t')!.isSaved,
+        reason: 'retry save',
       );
     });
 
-    test('completed on the server but never saved starts the save', () async {
+    test('leftover working files are cleaned, keeping only finished downloads waiting to be saved', () async {
+      h.api.script('run', [makeJob(id: 'run', status: JobStatus.downloading)]);
+      await boot([
+        seeded('run'),
+        seeded('c', status: JobStatus.completed),
+        seeded('f', status: JobStatus.failed),
+        seeded(
+          's',
+          status: JobStatus.completed,
+          save: SaveState.saved,
+          savedUri: 'content://x',
+        ),
+        seeded('gone', status: JobStatus.completed).copyWith(jobGone: true),
+      ]);
+      await eventually(
+        () => h.api.lastCleanupKeep != null,
+        reason: 'cleanup at launch',
+      );
+      // Saved, gone, failed and cut-off entries only left partial files; only 'c' still needs its file.
+      expect(h.api.lastCleanupKeep, {'c'});
+    });
+
+    test('finished but never saved starts the save', () async {
       h.api.files['c'] = List.generate(8, (i) => i);
       h.api.script('c', [
         makeJob(
           id: 'c',
           status: JobStatus.completed,
-          result: makeResult(id: 'c', sizeBytes: 8),
+          result: makeResult(sizeBytes: 8),
         ),
       ]);
       await boot([seeded('c', status: JobStatus.completed)]);
@@ -299,7 +301,7 @@ void main() {
   });
 
   group('cancel, retry, remove', () {
-    test('cancel calls the server and applies its answer', () async {
+    test('cancel stops the download and applies the result', () async {
       h.api.script('j1', [makeJob(id: 'j1', status: JobStatus.downloading)]);
       await boot([seeded('j1')]);
       h.api.cancelResult = makeJob(id: 'j1', status: JobStatus.cancelled);
@@ -315,7 +317,6 @@ void main() {
         h.api.script('j1', [makeJob(id: 'j1', status: JobStatus.failed)]);
         await boot([seeded('j1', status: JobStatus.failed)]);
         h.api.cancelResult = const ApiException(
-          kind: ApiFailureKind.server,
           code: 'conflict',
           message: 'No.',
           status: 409,
@@ -327,7 +328,7 @@ void main() {
 
     test('other cancel errors are rethrown for the UI', () async {
       await boot([seeded('j1')]);
-      h.api.cancelResult = const ApiException.network();
+      h.api.cancelResult = _unreadable;
       await expectLater(
         controller().cancel('j1'),
         throwsA(isA<ApiException>()),
@@ -364,10 +365,39 @@ void main() {
       expect(state().entries, isEmpty);
       expect(container.read(historyStoreProvider).load(), isEmpty);
       expect(
-        h.media.events,
+        h.media.events.where((e) => e.startsWith('save') || e.contains('delete')),
         isEmpty,
         reason: 'no file deletion call exists or is made',
       );
+    });
+
+    test('removing an entry releases its unsaved working file', () async {
+      h.api.files['c'] = List.generate(8, (i) => i);
+      h.media.saveError = const NativeMediaException(
+        NativeMediaFailure.storageFull,
+        'full',
+      );
+      h.api.script('c', [
+        makeJob(
+          id: 'c',
+          status: JobStatus.completed,
+          result: makeResult(sizeBytes: 8),
+        ),
+      ]);
+      await boot([seeded('c', status: JobStatus.completed)]);
+      await eventually(
+        () => state().entryFor('c')!.saveState == SaveState.failed,
+        reason: 'save failure',
+      );
+      expect(h.api.hasWorkingFile('c'), isTrue, reason: 'kept for a retry');
+
+      controller().remove('c');
+
+      await eventually(
+        () => h.api.calls.contains('release c'),
+        reason: 'release',
+      );
+      expect(h.api.hasWorkingFile('c'), isFalse);
     });
 
     test('clearFinished keeps running downloads', () async {
@@ -394,7 +424,7 @@ void main() {
         makeJob(
           id: 'c',
           status: JobStatus.completed,
-          result: makeResult(id: 'c', sizeBytes: 8),
+          result: makeResult(sizeBytes: 8),
         ),
       ]);
       await boot([seeded('c', status: JobStatus.completed)]);
@@ -407,15 +437,14 @@ void main() {
     });
 
     test(
-      'a short file fails the save and Retry save can succeed later',
+      'an incomplete file fails the save and Retry save can succeed later',
       () async {
-        h.api.files['c'] = [1, 2, 3]; // server says 8 bytes, body has 3
-        h.api.fileContentLengthOverride = 8;
+        h.api.files['c'] = [1, 2, 3]; // the job says 8 bytes, the file has 3
         h.api.script('c', [
           makeJob(
             id: 'c',
             status: JobStatus.completed,
-            result: makeResult(id: 'c', sizeBytes: 8),
+            result: makeResult(sizeBytes: 8),
           ),
         ]);
         await boot([seeded('c', status: JobStatus.completed)]);
@@ -425,11 +454,10 @@ void main() {
         );
         final failed = state().entryFor('c')!;
         expect(failed.isSaved, isFalse);
-        expect(failed.saveError, contains("didn't transfer completely"));
+        expect(failed.saveError, contains("didn't finish downloading"));
         expect(h.media.events.where((e) => e.startsWith('save')), isEmpty);
 
         h.api.files['c'] = List.generate(8, (i) => i);
-        h.api.fileContentLengthOverride = null;
         controller().saveToDevice('c');
         await eventually(
           () => state().entryFor('c')!.isSaved,
@@ -438,52 +466,26 @@ void main() {
       },
     );
 
-    test('a file that expired on the server marks the entry expired', () async {
+    test('a finished file that is gone marks the entry unavailable', () async {
       h.api.fileError = const ApiException(
-        kind: ApiFailureKind.server,
         code: 'expired',
-        message: 'Expired.',
-        status: 410,
+        message: 'Gone.',
+        status: 404,
       );
       h.api.script('c', [
         makeJob(
           id: 'c',
           status: JobStatus.completed,
-          result: makeResult(id: 'c', sizeBytes: 8),
+          result: makeResult(sizeBytes: 8),
         ),
       ]);
       await boot([seeded('c', status: JobStatus.completed)]);
       await eventually(
-        () => state().entryFor('c')!.serverGone,
-        reason: 'expiry',
+        () => state().entryFor('c')!.jobGone,
+        reason: 'gone',
       );
       expect(state().entryFor('c')!.tab, DownloadsTab.failed);
     });
-
-    test(
-      'removing an entry mid-transfer cancels it and leaves nothing behind',
-      () async {
-        h.api.files['c'] = List.generate(400, (i) => i % 256);
-        h.api.chunkDelay = const Duration(milliseconds: 4);
-        h.api.script('c', [
-          makeJob(
-            id: 'c',
-            status: JobStatus.completed,
-            result: makeResult(id: 'c', sizeBytes: 400),
-          ),
-        ]);
-        await boot([seeded('c', status: JobStatus.completed)]);
-        await eventually(
-          () => state().entryFor('c')?.saveState == SaveState.transferring,
-          reason: 'transfer start',
-        );
-        controller().remove('c');
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(state().entries, isEmpty);
-        expect(h.media.events.where((e) => e.startsWith('save')), isEmpty);
-        expect(h.temp.listSync(), isEmpty);
-      },
-    );
   });
 
   group('open and share', () {
@@ -518,15 +520,16 @@ void main() {
     });
 
     test(
-      'a file deleted outside the app is reported and offers Retry save',
+      'a file deleted outside the app is reported and can only be downloaded again',
       () async {
         await bootSaved();
         h.media.existing['content://media/downloads/9'] = false;
         expect(await controller().openSaved('s'), FileActionResult.fileMissing);
         final entry = state().entryFor('s')!;
         expect(entry.isSaved, isFalse);
-        expect(entry.saveState, SaveState.failed);
         expect(entry.saveError, contains('moved or deleted'));
+        expect(entry.jobGone, isTrue, reason: 'the working copy was released when it was saved');
+        expect(entry.tab, DownloadsTab.failed);
       },
     );
 
@@ -545,33 +548,62 @@ void main() {
     });
   });
 
-  group('lifecycle and connectivity', () {
-    test('pausing stops polling; resuming restarts it', () async {
+  group('background and lifecycle', () {
+    test('downloads keep being tracked while the app is paused', () async {
       h.api.script('j1', [makeJob(id: 'j1', status: JobStatus.downloading)]);
       await boot([seeded('j1')]);
       await eventually(
         () => h.api.calls.where((c) => c == 'get j1').length >= 2,
         reason: 'polling',
       );
-      controller().onAppPaused();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-      final pausedCount = h.api.calls.length;
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-      expect(
-        h.api.calls.length,
-        pausedCount,
-        reason: 'no requests while backgrounded',
-      );
 
-      await controller().onAppResumed();
+      controller().onAppPaused();
+      final pausedCount = h.api.calls.length;
+
       await eventually(
-        () => h.api.calls.length > pausedCount,
-        reason: 'resumed polling',
+        () => h.api.calls.length > pausedCount + 2,
+        reason: 'polling continues in the background',
+      );
+      expect(container.read(historyStoreProvider).load().single.jobId, 'j1');
+    });
+
+    test('a foreground notification runs while a download is active and stops when it is saved', () async {
+      await boot();
+      h.api.files['job1'] = List.generate(8, (i) => i);
+      h.api.script('job1', [
+        makeJob(id: 'job1', status: JobStatus.downloading),
+        makeJob(
+          id: 'job1',
+          status: JobStatus.completed,
+          result: makeResult(sizeBytes: 8),
+        ),
+      ]);
+
+      await controller().start(
+        sourceUrl: 'https://youtu.be/x',
+        metadata: sampleMetadata,
+        format: sampleMetadata.formats[1],
+        idempotencyKey: 'k',
+      );
+      expect(h.media.events, contains('startTransfer'));
+      expect(h.media.events, isNot(contains('stopTransfer')));
+
+      await eventually(() => state().entryFor('job1')!.isSaved);
+      await eventually(() => h.media.events.contains('stopTransfer'));
+      expect(
+        h.media.events.where((e) => e == 'startTransfer').length,
+        1,
+        reason: 'one notification, not one per update',
       );
     });
 
-    test('repeated network failure flags the job as unreachable without changing its state', () async {
-      h.api.script('j1', [const ApiException.network()]);
+    test('no notification is started for a failed download', () async {
+      await boot([seeded('f', status: JobStatus.failed)]);
+      expect(h.media.events, isNot(contains('startTransfer')));
+    });
+
+    test('repeated read failures flag the job as unreachable without changing its state', () async {
+      h.api.script('j1', [_unreadable]);
       await boot([seeded('j1')]);
       await eventually(
         () => state().lost['j1'] == PollLoss.unreachable,
@@ -579,9 +611,9 @@ void main() {
         reason: 'loss',
       );
       expect(state().entryFor('j1')!.status, JobStatus.downloading);
-      expect(state().entryFor('j1')!.serverGone, isFalse);
+      expect(state().entryFor('j1')!.jobGone, isFalse);
 
-      // refresh() recovers when the server is back.
+      // refresh() recovers once the job can be read again.
       h.api.script('j1', [
         makeJob(
           id: 'j1',
@@ -591,22 +623,6 @@ void main() {
       ]);
       await controller().refresh('j1');
       expect(state().lost.containsKey('j1'), isFalse);
-    });
-
-    test('a rejected API key is flagged separately', () async {
-      h.api.script('j1', [
-        const ApiException(
-          kind: ApiFailureKind.server,
-          code: 'unauthorized',
-          message: 'no',
-          status: 401,
-        ),
-      ]);
-      await boot([seeded('j1')]);
-      await eventually(
-        () => state().lost['j1'] == PollLoss.unauthorized,
-        reason: 'unauthorized',
-      );
     });
   });
 

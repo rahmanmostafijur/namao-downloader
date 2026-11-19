@@ -5,23 +5,19 @@ import '../../core/job_poller.dart';
 import '../../data/history_entry.dart';
 import 'downloads_controller.dart';
 
-/// Immutable snapshot of tracked downloads plus transient (never persisted) transfer info.
+/// Immutable snapshot of tracked downloads.
 class DownloadsState {
   DownloadsState({
     this.entries = const [],
     this.lost = const {},
-    this.transfers = const {},
     this.isLoaded = false,
   });
 
   /// Newest first.
   final List<HistoryEntry> entries;
 
-  /// Jobs whose polling stopped without a terminal state (the server may still be working).
+  /// Jobs whose progress could not be read (the download may still be running).
   final Map<String, PollLoss> lost;
-
-  /// Bytes received so far per job id while a phone-side transfer runs.
-  final Map<String, int> transfers;
 
   /// History has been read from disk.
   final bool isLoaded;
@@ -35,12 +31,10 @@ class DownloadsState {
   DownloadsState copyWith({
     List<HistoryEntry>? entries,
     Map<String, PollLoss>? lost,
-    Map<String, int>? transfers,
     bool? isLoaded,
   }) => DownloadsState(
     entries: entries ?? this.entries,
     lost: lost ?? this.lost,
-    transfers: transfers ?? this.transfers,
     isLoaded: isLoaded ?? this.isLoaded,
   );
 }
@@ -100,8 +94,4 @@ final entryProvider = Provider.family<HistoryEntry?, String>(
 
 final lostProvider = Provider.family<PollLoss?, String>(
   (ref, id) => ref.watch(downloadsProvider.select((s) => s.lost[id])),
-);
-
-final transferBytesProvider = Provider.family<int?, String>(
-  (ref, id) => ref.watch(downloadsProvider.select((s) => s.transfers[id])),
 );

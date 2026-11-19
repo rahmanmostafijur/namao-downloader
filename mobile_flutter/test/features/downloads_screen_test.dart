@@ -39,7 +39,7 @@ HistoryEntry entry(
     attempt: attempt,
     error: error,
     result: status == JobStatus.completed
-        ? makeResult(id: id, sizeBytes: 5 * 1024 * 1024)
+        ? makeResult(sizeBytes: 5 * 1024 * 1024)
         : null,
   ),
   saveState: save,
@@ -47,7 +47,7 @@ HistoryEntry entry(
   savedName: savedUri == null ? null : '$title.mp4',
   savedBytes: savedUri == null ? null : 5 * 1024 * 1024,
   saveError: saveError,
-  serverGone: gone,
+  jobGone: gone,
 );
 
 Map<String, Object> prefsFor(List<HistoryEntry> entries) => {
@@ -94,14 +94,13 @@ void main() {
       await pumpNamao(tester, h);
       await openDownloads(tester);
 
-      expect(find.text('Waiting in queue…'), findsOneWidget);
+      expect(find.text('Preparing your download…'), findsOneWidget);
       expect(find.text('Downloading 42%'), findsOneWidget);
       expect(
         find.text('2.0 MB/s · 14s left · 21.0 MB / 50.0 MB'),
         findsOneWidget,
       );
-      expect(find.text('Merging audio and video…'), findsOneWidget);
-      expect(find.text('Verifying file…'), findsOneWidget);
+      expect(find.text('Finishing…'), findsNWidgets(2)); // merging and verifying
 
       // Exactly one determinate bar (the 42% one); queued/merging/verifying are indeterminate.
       final bars = tester.widgetList<LinearProgressIndicator>(
@@ -190,7 +189,7 @@ void main() {
       expect(find.text('Failed'), findsWidgets);
       expect(find.text('Cancelled'), findsOneWidget);
       expect(find.text('Interrupted'), findsOneWidget);
-      expect(find.text('Expired'), findsOneWidget);
+      expect(find.text('No longer available'), findsOneWidget);
       expect(
         find.textContaining('private, deleted, or removed'),
         findsOneWidget,
@@ -200,7 +199,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.textContaining('no longer has this download'),
+        find.textContaining('no longer on this phone'),
         findsOneWidget,
       );
       // Failed (video_unavailable) is not retryable, the rest are.
@@ -307,28 +306,28 @@ void main() {
   group('describeEntry', () {
     test('lost contact adds a message and Refresh but keeps Cancel', () {
       final view = describeEntry(entry('d', 'x'), lost: PollLoss.unreachable);
-      expect(view.message, contains('Lost contact'));
+      expect(view.message, contains("Can't update the progress"));
       expect(view.canRefresh, isTrue);
       expect(view.canCancel, isTrue);
     });
 
-    test('completed on the server, being copied to the phone', () {
+    test('finished, being moved into Downloads', () {
       final e = entry(
         't',
         'x',
         status: JobStatus.completed,
         save: SaveState.transferring,
       );
-      final view = describeEntry(e, transferBytes: 1024 * 1024);
-      expect(view.label, 'Saving to phone 20%');
-      expect(view.progress, closeTo(0.2, 1e-9));
-      expect(view.bytesLine, '1.0 MB / 5.0 MB');
+      final view = describeEntry(e);
+      expect(view.label, 'Finishing…');
+      expect(view.showProgress, isTrue);
+      expect(view.progress, isNull, reason: 'indeterminate: no made-up percentage');
     });
 
-    test('completed but not started saving says Ready, preparing', () {
+    test('finished but not started saving says Ready, finishing', () {
       final view = describeEntry(entry('t', 'x', status: JobStatus.completed));
       expect(view.label, 'Ready');
-      expect(view.message, 'Preparing to save…');
+      expect(view.message, 'Finishing…');
       expect(view.showProgress, isTrue);
     });
 
@@ -345,11 +344,6 @@ void main() {
       expect(view.label, 'Saved');
       expect(view.canRemove, isTrue);
       expect(view.isSaved, isTrue);
-    });
-
-    test('a rejected API key explains itself', () {
-      final view = describeEntry(entry('t', 'x'), lost: PollLoss.unauthorized);
-      expect(view.message, contains('API key'));
     });
   });
 }

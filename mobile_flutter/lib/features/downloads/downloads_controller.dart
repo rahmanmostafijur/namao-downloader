@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_exception.dart';
-import '../../core/api/namao_api.dart';
 import '../../core/job_poller.dart';
 import '../../core/models/job.dart';
 import '../../core/models/job_status.dart';
@@ -17,11 +16,12 @@ import 'downloads_state.dart';
 /// Outcome of Open / Share on a saved file.
 enum FileActionResult { ok, fileMissing, noAppFound, failed }
 
-const String interruptedTransferMessage =
-    'The transfer to this phone was interrupted. The file is still on the server: tap Retry save.';
+const String interruptedSaveMessage =
+    'Saving to your phone was interrupted. Tap Retry save.';
 
 /// App-level owner of every tracked download. Lives above the widget tree, so switching tabs
-/// never cancels polling or a phone-side transfer.
+/// never cancels a download or its save, and a foreground notification keeps the app alive while
+/// downloads run in the background.
 class DownloadsController extends Notifier<DownloadsState> {
   final Map<String, JobPoller> _pollers = {};
   final Map<String, TransferToken> _tokens = {};
@@ -31,7 +31,6 @@ class DownloadsController extends Notifier<DownloadsState> {
   bool _draining = false;
   bool _notificationsAsked = false;
   DateTime _lastPersist = DateTime.fromMillisecondsSinceEpoch(0);
-  DateTime _lastTransferUi = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastNotification = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Minimum gap between disk writes for progress-only changes.
@@ -45,10 +44,6 @@ class DownloadsController extends Notifier<DownloadsState> {
         token.cancel();
       }
     });
-    ref.listen<NamaoApi?>(apiProvider, (previous, next) {
-      _stopAllPollers();
-      if (next != null && state.isLoaded) unawaited(_trackAll());
-    });
     unawaited(Future<void>.microtask(_restore));
     return DownloadsState();
   }
@@ -60,8 +55,13 @@ class DownloadsController extends Notifier<DownloadsState> {
     final reconciled = [for (final e in loaded) _reconcile(e)];
     state = state.copyWith(entries: reconciled, isLoaded: true);
     _persist(force: true);
-    final saver = ref.read(fileSaverProvider);
-    if (saver != null) await saver.cleanStaleTempFiles();
+    // Only a finished download that is waiting to be saved still needs its working files. Anything
+    // else (a download cut off when the app died, a failed or cancelled one) left only leftovers,
+    // which can be hundreds of MB.
+    await ref.read(apiProvider).cleanup({
+      for (final e in reconciled)
+        if (e.needsSave) e.jobId,
+    });
     if (!ref.mounted) return;
     await _trackAll();
   }
@@ -71,7 +71,7 @@ class DownloadsController extends Notifier<DownloadsState> {
     if (entry.saveState != SaveState.transferring) return entry;
     return entry.copyWith(
       saveState: SaveState.failed,
-      saveError: interruptedTransferMessage,
+      saveError: interruptedSaveMessage,
     );
   }
 
@@ -80,31 +80,21 @@ class DownloadsController extends Notifier<DownloadsState> {
     await _trackAll();
   }
 
-  void onAppPaused() {
-    _stopAllPollers();
-    _persist(force: true);
-  }
+  /// Downloads keep running (and being tracked) in the background, so only the history is written.
+  void onAppPaused() => _persist(force: true);
 
   Future<void> _trackAll() async {
     for (final entry in state.entries) {
       if (!ref.mounted) return;
+      if (entry.jobGone || entry.isSaved) continue;
       final status = entry.status;
-      if (entry.serverGone || entry.isSaved || !_isCurrentServer(entry)) {
-        continue;
-      }
       if (status == null || !status.isTerminal) {
         _startPoller(entry.jobId);
-      } else if (entry.needsSave) {
-        await _refreshOnce(entry.jobId);
-        if (!ref.mounted) return;
-        final fresh = state.entryFor(entry.jobId);
-        if (fresh != null &&
-            fresh.needsSave &&
-            fresh.saveState == SaveState.none) {
-          _enqueueSave(fresh.jobId);
-        }
+      } else if (entry.needsSave && entry.saveState == SaveState.none) {
+        _enqueueSave(entry.jobId);
       }
     }
+    _syncService();
   }
 
   void _stopAllPollers() {
@@ -117,12 +107,9 @@ class DownloadsController extends Notifier<DownloadsState> {
   // ----------------------------------------------------------------- polling
 
   void _startPoller(String id) {
-    final api = ref.read(apiProvider);
-    if (!ref.mounted || api == null || (_pollers[id]?.isRunning ?? false)) {
-      return;
-    }
+    if (!ref.mounted || (_pollers[id]?.isRunning ?? false)) return;
     final poller = JobPoller(
-      api: api,
+      api: ref.read(apiProvider),
       jobId: id,
       interval: ref.read(pollIntervalProvider),
       onJob: _applyJob,
@@ -132,16 +119,9 @@ class DownloadsController extends Notifier<DownloadsState> {
     unawaited(poller.start());
   }
 
-  String? get _server => ref.read(connectionProvider).url;
-
-  bool _isCurrentServer(HistoryEntry entry) => entry.isForServer(_server);
-
   Future<void> _refreshOnce(String id) async {
-    final api = ref.read(apiProvider);
-    if (api == null) return;
     try {
-      final job = await api.getJob(id);
-      _applyJob(job);
+      _applyJob(await ref.read(apiProvider).getJob(id));
     } on ApiException catch (error) {
       if (error.isJobGone) _onLost(id, PollLoss.notFound);
       // Any other failure leaves the record as it was: nothing is claimed that wasn't seen.
@@ -173,6 +153,7 @@ class DownloadsController extends Notifier<DownloadsState> {
         fresh.saveState == SaveState.none) {
       _enqueueSave(job.id);
     }
+    _notifyProgress();
   }
 
   void _onLost(String id, PollLoss reason) {
@@ -182,17 +163,17 @@ class DownloadsController extends Notifier<DownloadsState> {
     if (entry == null) return;
     if (reason == PollLoss.notFound) {
       if (!entry.isSaved) {
-        _replace(entry.copyWith(serverGone: true), structural: true);
+        _replace(entry.copyWith(jobGone: true), structural: true);
       }
       return;
     }
     state = state.copyWith(lost: {...state.lost, id: reason});
   }
 
-  /// Retry polling now (the "tap to refresh" affordance and pull-to-refresh).
+  /// Retry reading progress now (the "tap to refresh" affordance and pull-to-refresh).
   Future<void> refresh(String id) async {
     final entry = state.entryFor(id);
-    if (entry == null || entry.serverGone || !_isCurrentServer(entry)) return;
+    if (entry == null || entry.jobGone) return;
     _pollers.remove(id)?.stop();
     await _refreshOnce(id);
     final fresh = state.entryFor(id);
@@ -201,29 +182,15 @@ class DownloadsController extends Notifier<DownloadsState> {
 
   // ------------------------------------------------------------- user actions
 
-  NamaoApi _requireApi() {
-    final api = ref.read(apiProvider);
-    if (api == null) {
-      throw const ApiException(
-        kind: ApiFailureKind.server,
-        code: 'client_not_configured',
-        message: 'Set up a server in Settings first.',
-      );
-    }
-    return api;
-  }
-
   Future<HistoryEntry> start({
     required String sourceUrl,
     required VideoMetadata metadata,
     required FormatOption format,
     required String idempotencyKey,
   }) async {
-    final job = await _requireApi().createDownload(
-      sourceUrl,
-      format.id,
-      idempotencyKey,
-    );
+    final job = await ref
+        .read(apiProvider)
+        .createDownload(sourceUrl, format.id, idempotencyKey);
     final existing = state.entryFor(job.id);
     final entry =
         existing?.copyWith(job: job) ??
@@ -237,7 +204,6 @@ class DownloadsController extends Notifier<DownloadsState> {
           platform: job.platform.isEmpty ? metadata.platform : job.platform,
           createdAt: ref.read(clockProvider)(),
           job: job,
-          serverUrl: _server,
         );
     _replace(entry, structural: true, addIfMissing: true);
     if (!job.status.isTerminal) _startPoller(job.id);
@@ -259,13 +225,11 @@ class DownloadsController extends Notifier<DownloadsState> {
   }
 
   Future<HistoryEntry> _retry(HistoryEntry old) async {
-    // A key derived from the record being retried: a lost answer followed by another tap
-    // returns the same new job instead of creating a second one.
-    final job = await _requireApi().createDownload(
-      old.sourceUrl,
-      old.qualityId,
-      'retry:${old.jobId}',
-    );
+    // A key derived from the record being retried: a second tap returns the same new job
+    // instead of creating another one.
+    final job = await ref
+        .read(apiProvider)
+        .createDownload(old.sourceUrl, old.qualityId, 'retry:${old.jobId}');
     final entry = HistoryEntry(
       jobId: job.id,
       sourceUrl: old.sourceUrl,
@@ -276,7 +240,6 @@ class DownloadsController extends Notifier<DownloadsState> {
       platform: old.platform,
       createdAt: ref.read(clockProvider)(),
       job: job,
-      serverUrl: _server,
     );
     if (!old.isSaved && job.id != old.jobId) _discard(old.jobId);
     _replace(entry, structural: true, addIfMissing: true);
@@ -286,12 +249,10 @@ class DownloadsController extends Notifier<DownloadsState> {
 
   Future<void> cancel(String jobId) async {
     try {
-      _applyJob(await _requireApi().cancel(jobId));
+      _applyJob(await ref.read(apiProvider).cancel(jobId));
     } on ApiException catch (error) {
       if (error.status == 409) {
-        await _refreshOnce(
-          jobId,
-        ); // already finished: show what the server says
+        await _refreshOnce(jobId); // already finished: show what really happened
         return;
       }
       rethrow;
@@ -322,16 +283,18 @@ class DownloadsController extends Notifier<DownloadsState> {
           if (e.jobId != jobId) e,
       ],
       lost: {...state.lost}..remove(jobId),
-      transfers: {...state.transfers}..remove(jobId),
     );
+    // A finished file that was never saved is of no use once its record is gone.
+    unawaited(ref.read(apiProvider).release(jobId));
+    _syncService();
   }
 
   // --------------------------------------------------------------- the phone
 
-  /// Starts (or retries) the device save. Idempotent: a saved or queued job is left alone.
+  /// Starts (or retries) saving into Downloads. Idempotent: a saved or queued job is left alone.
   void saveToDevice(String jobId) {
     final entry = state.entryFor(jobId);
-    if (entry == null || !entry.needsSave || !_isCurrentServer(entry)) return;
+    if (entry == null || !entry.needsSave) return;
     if (entry.saveState == SaveState.failed) {
       _replace(
         entry.copyWith(saveState: SaveState.none, clearSaveError: true),
@@ -350,18 +313,11 @@ class DownloadsController extends Notifier<DownloadsState> {
   Future<void> _drainSaves() async {
     if (_draining) return;
     _draining = true;
-    final media = ref.read(nativeMediaProvider);
     try {
-      // Not awaited: the permission dialog must not hold the transfer back on a fresh install.
-      unawaited(_askNotificationsOnce(media));
       while (_saveQueue.isNotEmpty) {
-        await _saveOne(_saveQueue.removeAt(0), media);
+        await _saveOne(_saveQueue.removeAt(0));
       }
     } finally {
-      if (_serviceRunning) {
-        _serviceRunning = false;
-        await _stopService(media);
-      }
       _draining = false;
       if (_saveQueue.isNotEmpty) {
         unawaited(_drainSaves()); // queued while stopping
@@ -369,59 +325,25 @@ class DownloadsController extends Notifier<DownloadsState> {
     }
   }
 
-  Future<void> _askNotificationsOnce(NativeMedia media) async {
-    if (_notificationsAsked) return;
-    _notificationsAsked = true;
-    try {
-      await media.requestNotificationPermission();
-    } on NativeMediaException {
-      // Denied or unavailable: the transfer still runs; only the notification is hidden.
-    }
-  }
-
-  Future<void> _startService(NativeMedia media) async {
-    try {
-      await media.startTransfer('Saving to Downloads/Namao');
-    } on NativeMediaException {
-      // Without the service the transfer still runs while the app is in the foreground.
-    }
-  }
-
-  Future<void> _stopService(NativeMedia media) async {
-    try {
-      await media.stopTransfer();
-    } on NativeMediaException {
-      // Nothing to stop.
-    }
-  }
-
-  Future<void> _saveOne(String jobId, NativeMedia media) async {
+  Future<void> _saveOne(String jobId) async {
     final entry = state.entryFor(jobId);
     final result = entry?.job?.result;
-    final saver = ref.read(fileSaverProvider);
     if (entry == null || result == null || entry.isSaved) return;
-    if (saver == null || !_isCurrentServer(entry)) return;
-    if (!_serviceRunning) {
-      // Started only once a transfer is really going to run, never speculatively.
-      _serviceRunning = true;
-      await _startService(media);
-    }
     final token = TransferToken();
     _tokens[jobId] = token;
     _replace(
       entry.copyWith(saveState: SaveState.transferring, clearSaveError: true),
       structural: true,
     );
-    _setTransfer(jobId, 0);
     try {
-      final saved = await saver.save(
-        jobId: jobId,
-        filename: result.filename,
-        expectedBytes: result.sizeBytes,
-        token: token,
-        onProgress: (bytes) =>
-            _onTransferProgress(jobId, bytes, result.sizeBytes, media),
-      );
+      final saved = await ref
+          .read(fileSaverProvider)
+          .save(
+            jobId: jobId,
+            filename: result.filename,
+            expectedBytes: result.sizeBytes,
+            token: token,
+          );
       _finishSave(jobId, saved: saved);
     } on TransferException catch (error) {
       _finishSave(jobId, failure: error);
@@ -435,9 +357,6 @@ class DownloadsController extends Notifier<DownloadsState> {
       );
     } finally {
       _tokens.remove(jobId);
-      if (ref.mounted) {
-        state = state.copyWith(transfers: {...state.transfers}..remove(jobId));
-      }
     }
   }
 
@@ -467,43 +386,91 @@ class DownloadsController extends Notifier<DownloadsState> {
       entry.copyWith(
         saveState: SaveState.failed,
         saveError: error.message,
-        serverGone:
-            entry.serverGone || error.failure == TransferFailure.expired,
+        jobGone: entry.jobGone || error.failure == TransferFailure.expired,
       ),
       structural: true,
     );
   }
 
-  void _setTransfer(String jobId, int bytes) {
-    state = state.copyWith(transfers: {...state.transfers, jobId: bytes});
+  // ------------------------------------------------- background notification
+
+  /// Keeps one foreground notification up for as long as anything is downloading or being
+  /// saved, so Android does not stop the app while it works in the background.
+  void _syncService() {
+    if (!ref.mounted) return;
+    final shouldRun = state.entries.any((e) => e.isActive);
+    if (shouldRun == _serviceRunning) return;
+    _serviceRunning = shouldRun;
+    final media = ref.read(nativeMediaProvider);
+    unawaited(shouldRun ? _startService(media) : _stopService(media));
   }
 
-  void _onTransferProgress(
-    String jobId,
-    int bytes,
-    int total,
-    NativeMedia media,
-  ) {
-    final now = ref.read(clockProvider)();
-    if (now.difference(_lastTransferUi) >= const Duration(milliseconds: 250)) {
-      _lastTransferUi = now;
-      _setTransfer(jobId, bytes);
-    }
-    if (now.difference(_lastNotification) >= const Duration(seconds: 1) &&
-        total > 0) {
-      _lastNotification = now;
-      final percent = (bytes * 100 ~/ total).clamp(0, 100);
-      unawaited(_notify(media, percent));
-    }
-  }
-
-  Future<void> _notify(NativeMedia media, int percent) async {
+  Future<void> _startService(NativeMedia media) async {
     try {
-      await media.updateTransfer(percent, 'Saving $percent%');
+      // Not awaited: the permission dialog must not hold the download back on a fresh install.
+      unawaited(_askNotificationsOnce(media));
+      await media.startTransfer('Preparing your download…');
+    } on NativeMediaException {
+      // Without the service the download still runs while the app is in the foreground.
+    }
+  }
+
+  Future<void> _stopService(NativeMedia media) async {
+    try {
+      await media.stopTransfer();
+    } on NativeMediaException {
+      // Nothing to stop.
+    }
+  }
+
+  Future<void> _askNotificationsOnce(NativeMedia media) async {
+    if (_notificationsAsked) return;
+    _notificationsAsked = true;
+    try {
+      await media.requestNotificationPermission();
+    } on NativeMediaException {
+      // Denied or unavailable: downloads still run; only the notification is hidden.
+    }
+  }
+
+  /// At most once a second: the notification shows the real progress of the running download.
+  void _notifyProgress() {
+    if (!_serviceRunning) return;
+    final now = ref.read(clockProvider)();
+    if (now.difference(_lastNotification) < const Duration(seconds: 1)) return;
+    _lastNotification = now;
+    final active = state.entries.where((e) => e.isActive).toList();
+    if (active.isEmpty) return;
+    var percent = -1;
+    final String text;
+    if (active.length > 1) {
+      text = 'Downloading ${active.length} videos…';
+    } else {
+      final job = active.first.job;
+      final status = job?.status;
+      if (status == JobStatus.downloading && job!.progress.percent > 0) {
+        percent = job.progress.percent.round().clamp(0, 100);
+        text = 'Downloading $percent%';
+      } else if (status == JobStatus.merging ||
+          status == JobStatus.verifying ||
+          status == JobStatus.completed) {
+        text = 'Finishing…';
+      } else {
+        text = 'Preparing your download…';
+      }
+    }
+    unawaited(_notify(ref.read(nativeMediaProvider), percent, text));
+  }
+
+  Future<void> _notify(NativeMedia media, int percent, String text) async {
+    try {
+      await media.updateTransfer(percent, text);
     } on NativeMediaException {
       // The notification is cosmetic.
     }
   }
+
+  // ------------------------------------------------------------- open / share
 
   Future<FileActionResult> openSaved(String jobId) => _fileAction(
     jobId,
@@ -531,6 +498,8 @@ class DownloadsController extends Notifier<DownloadsState> {
             saveError:
                 'The saved file was moved or deleted from Downloads/Namao.',
             clearSaved: true,
+            // The working copy was deleted when it was saved: only a new download can recover it.
+            jobGone: true,
           ),
           structural: true,
         );
@@ -570,6 +539,7 @@ class DownloadsController extends Notifier<DownloadsState> {
     }
     state = state.copyWith(entries: entries, lost: lost);
     _persist(force: structural);
+    if (structural) _syncService();
   }
 
   void _persist({bool force = false}) {

@@ -1,12 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/api/http_namao_api.dart';
 import '../core/api/namao_api.dart';
 import '../core/uuid.dart';
+import 'engine/local_engine.dart';
+import 'engine/local_namao_api.dart';
 import 'file_saver.dart';
 import 'history_store.dart';
 import 'native_media.dart';
@@ -18,20 +17,8 @@ final sharedPreferencesProvider = Provider<SharedPreferences>(
       throw UnimplementedError('sharedPreferencesProvider must be overridden'),
 );
 
-/// Settings read once before the first frame (the API key lives in secure storage, which is async).
-final initialSettingsProvider = Provider<AppSettings>(
-  (ref) => const AppSettings(),
-);
-
-final secretStoreProvider = Provider<SecretStore>(
-  (ref) => const SecureSecretStore(),
-);
-
 final settingsStoreProvider = Provider<SettingsStore>(
-  (ref) => SettingsStore(
-    ref.watch(sharedPreferencesProvider),
-    ref.watch(secretStoreProvider),
-  ),
+  (ref) => SettingsStore(ref.watch(sharedPreferencesProvider)),
 );
 
 final historyStoreProvider = Provider<HistoryStore>(
@@ -42,10 +29,15 @@ final nativeMediaProvider = Provider<NativeMedia>(
   (ref) => const MethodChannelNativeMedia(),
 );
 
+/// The on-device yt-dlp + FFmpeg runner. Tests replace this with a fake.
+final localEngineProvider = Provider<LocalEngine>(
+  (ref) => const MethodChannelLocalEngine(),
+);
+
 /// Idempotency keys and the like: injectable so tests are deterministic.
 final idGeneratorProvider = Provider<String Function()>((ref) => newUuid);
 
-/// How often a running job is polled.
+/// How often a running download is checked.
 final pollIntervalProvider = Provider<Duration>(
   (ref) => const Duration(seconds: 1),
 );
@@ -58,17 +50,7 @@ final settingsProvider = NotifierProvider<SettingsController, AppSettings>(
 
 class SettingsController extends Notifier<AppSettings> {
   @override
-  AppSettings build() => ref.watch(initialSettingsProvider);
-
-  Future<void> saveServer(String url, String? apiKey) async {
-    await ref.read(settingsStoreProvider).saveServer(url, apiKey);
-    final key = (apiKey == null || apiKey.isEmpty) ? null : apiKey;
-    state = AppSettings(
-      serverUrl: url,
-      apiKey: key,
-      themeMode: state.themeMode,
-    );
-  }
+  AppSettings build() => ref.watch(settingsStoreProvider).load();
 
   Future<void> setThemeMode(ThemeMode mode) async {
     state = state.copyWith(themeMode: mode);
@@ -76,34 +58,14 @@ class SettingsController extends Notifier<AppSettings> {
   }
 }
 
-/// The server connection (url + key only, so theme changes don't rebuild the client).
-final connectionProvider = Provider<({String? url, String? key})>((ref) {
-  final settings = ref.watch(settingsProvider);
-  return (url: settings.serverUrl, key: settings.apiKey);
-});
-
-/// Builds a client for a server address. Tests replace this with a fake.
-final apiFactoryProvider = Provider<NamaoApi Function(String url, String? key)>(
-  (ref) =>
-      (url, key) => HttpNamaoApi(baseUrl: url, apiKey: key),
+/// The downloader every screen uses: it runs on this phone.
+final apiProvider = Provider<NamaoApi>(
+  (ref) => LocalNamaoApi(engine: ref.watch(localEngineProvider)),
 );
 
-/// Null until the user has configured a server.
-final apiProvider = Provider<NamaoApi?>((ref) {
-  final connection = ref.watch(connectionProvider);
-  final url = connection.url;
-  if (url == null || url.isEmpty) return null;
-  final api = ref.watch(apiFactoryProvider)(url, connection.key);
-  ref.onDispose(api.close);
-  return api;
-});
-
-final fileSaverProvider = Provider<FileSaver?>((ref) {
-  final api = ref.watch(apiProvider);
-  if (api == null) return null;
-  return FileSaver(
-    api: api,
+final fileSaverProvider = Provider<FileSaver>(
+  (ref) => FileSaver(
+    api: ref.watch(apiProvider),
     media: ref.watch(nativeMediaProvider),
-    tempDirectory: () => Directory.systemTemp,
-  );
-});
+  ),
+);

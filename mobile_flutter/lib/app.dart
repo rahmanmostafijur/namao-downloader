@@ -6,7 +6,6 @@ import 'data/providers.dart';
 import 'design/theme.dart';
 import 'design/tokens.dart';
 import 'features/downloads/downloads_state.dart';
-import 'features/setup/setup_screen.dart';
 import 'features/shell/app_shell.dart';
 
 class NamaoApp extends ConsumerWidget {
@@ -15,9 +14,6 @@ class NamaoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(settingsProvider.select((s) => s.themeMode));
-    final configured = ref.watch(
-      settingsProvider.select((s) => s.isConfigured),
-    );
     return MaterialApp(
       title: 'Namao',
       debugShowCheckedModeBanner: false,
@@ -27,7 +23,7 @@ class NamaoApp extends ConsumerWidget {
       themeAnimationDuration: NamaoMotion.fast,
       builder: (context, child) =>
           _SystemChrome(child: _Lifecycle(child: child!)),
-      home: configured ? const AppShell() : const SetupScreen(),
+      home: const AppShell(),
     );
   }
 }
@@ -58,8 +54,8 @@ class _SystemChrome extends StatelessWidget {
   }
 }
 
-/// Re-checks running downloads when the app returns to the foreground, and stops polling when
-/// it leaves (the OS would freeze the timer anyway).
+/// Re-checks running downloads when the app returns to the foreground. Downloads keep running
+/// (and being tracked) in the background; the foreground notification is what keeps them alive.
 class _Lifecycle extends ConsumerStatefulWidget {
   const _Lifecycle({required this.child});
 
@@ -75,6 +71,9 @@ class _LifecycleState extends ConsumerState<_Lifecycle>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Get the engine ready while the user is still looking at the home screen. A failure here
+    // is not shown: the same step runs again, with a Retry, when a link is first used.
+    ref.read(apiProvider).prepare().ignore();
   }
 
   @override

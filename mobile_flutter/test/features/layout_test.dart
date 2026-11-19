@@ -175,10 +175,6 @@ void main() {
       h.api.hangJobs = true;
       addTearDown(h.dispose);
       await pumpNamao(tester, h);
-      expect(
-        find.bySemanticsLabel(RegExp('Server 10.0.2.2:8000')),
-        findsOneWidget,
-      );
       await tester.enterText(find.byType(TextField), 'https://youtu.be/abc');
       await settle(tester);
       expect(find.bySemanticsLabel('Detected YouTube'), findsOneWidget);

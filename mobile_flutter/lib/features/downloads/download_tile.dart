@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/job_view.dart';
 import '../../data/history_entry.dart';
-import '../../data/providers.dart';
 import '../../design/feedback.dart';
 import '../../design/progress_bar.dart';
 import '../../design/surfaces.dart';
@@ -26,15 +25,7 @@ class DownloadTile extends ConsumerWidget {
     final entry = ref.watch(entryProvider(jobId));
     if (entry == null) return const SizedBox.shrink();
     final lost = ref.watch(lostProvider(jobId));
-    final bytes = ref.watch(transferBytesProvider(jobId));
-    final server = ref.watch(connectionProvider.select((c) => c.url));
-    final view = describeEntry(
-      entry,
-      lost: lost,
-      transferBytes: bytes,
-      otherServer: !entry.isForServer(server),
-    );
-    return _TileBody(entry: entry, view: view);
+    return _TileBody(entry: entry, view: describeEntry(entry, lost: lost));
   }
 }
 
@@ -228,7 +219,8 @@ class _Actions extends ConsumerWidget {
     if (!context.mounted) return;
     final message = switch (result) {
       FileActionResult.ok => null,
-      FileActionResult.fileMissing => 'That file is no longer in Downloads/Namao. Retry save fetches it again.',
+      FileActionResult.fileMissing =>
+        'That file is no longer in Downloads/Namao. Use Retry to download it again.',
       FileActionResult.noAppFound =>
         'No app on this phone can open that file. Try Share.',
       FileActionResult.failed => "Couldn't complete that action.",

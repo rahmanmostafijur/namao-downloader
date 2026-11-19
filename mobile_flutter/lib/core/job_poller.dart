@@ -6,22 +6,19 @@ import 'models/job.dart';
 
 /// Why polling stopped without a terminal job.
 enum PollLoss {
-  /// 404/410: the server no longer has the job (expired or server reset).
+  /// The job no longer exists on this phone.
   notFound,
 
-  /// 401: the API key is missing or wrong.
-  unauthorized,
-
-  /// Repeated network/server errors. The job itself may still be running on the server.
+  /// Repeated failures reading the job. The download itself may still be running.
   unreachable,
 }
 
 typedef DelayFn = Future<void> Function(Duration duration);
 
-/// Polls `GET /downloads/{id}` until the job is terminal.
+/// Checks a job until it is terminal.
 ///
-/// Polling (not SSE) because it survives flaky mobile networks and is always correct.
-/// Transient errors back off exponentially (capped); 404/401 end the watch immediately.
+/// Polling keeps one simple, always-correct source of truth for progress. Transient errors back
+/// off exponentially (capped); a missing job ends the watch immediately.
 class JobPoller {
   JobPoller({
     required this.api,
@@ -93,7 +90,6 @@ class JobPoller {
 
   PollLoss? _classify(ApiException error, int failures) {
     if (error.isJobGone) return PollLoss.notFound;
-    if (error.isUnauthorized) return PollLoss.unauthorized;
     if (failures >= maxConsecutiveFailures) return PollLoss.unreachable;
     return null;
   }

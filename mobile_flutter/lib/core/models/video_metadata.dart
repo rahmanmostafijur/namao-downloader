@@ -55,7 +55,6 @@ class VideoMetadata {
     this.uploader = '',
     this.durationSeconds = 0,
     this.thumbnail,
-    this.ffmpeg = true,
   });
 
   factory VideoMetadata.fromJson(Map<String, dynamic> json) {
@@ -75,7 +74,6 @@ class VideoMetadata {
       durationSeconds: readInt(json['duration_seconds']) ?? 0,
       thumbnail: readString(json['thumbnail']),
       formats: List.unmodifiable(formats),
-      ffmpeg: json['ffmpeg'] != false,
     );
   }
 
@@ -85,7 +83,6 @@ class VideoMetadata {
   final int durationSeconds;
   final String? thumbnail;
   final List<FormatOption> formats;
-  final bool ffmpeg;
 
   List<FormatOption> get videoFormats =>
       formats.where((f) => f.kind == FormatKind.video).toList(growable: false);

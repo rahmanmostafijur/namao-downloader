@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:namao_app/core/api/api_exception.dart';
 import 'package:namao_app/core/api/namao_api.dart';
 import 'package:namao_app/core/models/api_error.dart';
@@ -9,7 +8,6 @@ import 'package:namao_app/core/models/job.dart';
 import 'package:namao_app/core/models/job_status.dart';
 import 'package:namao_app/core/models/video_metadata.dart';
 import 'package:namao_app/data/native_media.dart';
-import 'package:namao_app/data/settings_store.dart';
 
 Job makeJob({
   String id = 'job1',
@@ -40,11 +38,16 @@ Job makeJob({
 JobResult makeResult({
   String filename = 'Video.mp4',
   int sizeBytes = 10,
-  String id = 'job1',
 }) => JobResult(
   filename: filename,
   sizeBytes: sizeBytes,
-  downloadUrl: '/api/v1/downloads/$id/file',
+  downloadUrl: 'device',
+);
+
+const ApiException notFound = ApiException(
+  code: 'not_found',
+  message: 'Not found.',
+  status: 404,
 );
 
 const VideoMetadata sampleMetadata = VideoMetadata(
@@ -81,13 +84,14 @@ const VideoMetadata sampleMetadata = VideoMetadata(
   ],
 );
 
-/// A scriptable server. Each call is recorded in [calls].
-class FakeApi extends NamaoApi {
+/// A scriptable downloader. Each call is recorded in [calls].
+class FakeApi implements NamaoApi {
   final List<String> calls = [];
   final List<String> idempotencyKeys = [];
   VideoMetadata? metadataResult = sampleMetadata;
   Object? metadataError;
   Completer<VideoMetadata>? metadataGate;
+  Object? prepareError;
 
   /// Job returned by `createDownload`; a fresh id per call unless [fixedCreateId] is set.
   Object createResult = 'auto';
@@ -97,28 +101,33 @@ class FakeApi extends NamaoApi {
   /// Scripted `getJob` responses per id. The last one repeats. Entries are [Job] or [ApiException].
   final Map<String, List<Object>> jobScripts = {};
   Object? cancelResult;
-  Map<String, List<int>> files = {};
+
+  /// Finished files by job id; each is written to disk when asked for.
+  final Map<String, List<int>> files = {};
   Object? fileError;
-  int? fileContentLengthOverride;
-
-  /// Bytes per chunk (tiny by default so progress callbacks fire many times).
-  int chunkSize = 4;
-
-  /// Pause between chunks (zero = as fast as possible).
-  Duration chunkDelay = Duration.zero;
-  Object? Function(String id)? fileStreamError;
-  ConnectionReport report = const ConnectionReport(
-    ready: true,
-    authorized: true,
-  );
-  Object? connectionError;
-  bool closed = false;
+  Set<String>? lastCleanupKeep;
 
   /// When true, getJob never answers (keeps widget tests free of poll timers).
   bool hangJobs = false;
 
+  final Directory _dir = Directory.systemTemp.createTempSync('namao_fake_api');
+
   void script(String id, List<Object> responses) =>
       jobScripts[id] = List.of(responses);
+
+  /// Whether a working file for [id] is currently on disk.
+  bool hasWorkingFile(String id) => File('${_dir.path}/$id.bin').existsSync();
+
+  void dispose() {
+    if (_dir.existsSync()) _dir.deleteSync(recursive: true);
+  }
+
+  @override
+  Future<void> prepare() async {
+    calls.add('prepare');
+    final error = prepareError;
+    if (error != null) throw error;
+  }
 
   @override
   Future<VideoMetadata> metadata(String url) async {
@@ -153,14 +162,7 @@ class FakeApi extends NamaoApi {
     calls.add('get $id');
     if (hangJobs) return Completer<Job>().future;
     final script = jobScripts[id];
-    if (script == null || script.isEmpty) {
-      throw const ApiException(
-        kind: ApiFailureKind.server,
-        code: 'not_found',
-        message: 'Not found.',
-        status: 404,
-      );
-    }
+    if (script == null || script.isEmpty) throw notFound;
     final next = script.length > 1 ? script.removeAt(0) : script.first;
     if (next is Exception) throw next;
     return next as Job;
@@ -175,38 +177,29 @@ class FakeApi extends NamaoApi {
   }
 
   @override
-  Future<FileDownload> openFile(String id) async {
+  Future<File> finishedFile(String id) async {
     calls.add('file $id');
     final error = fileError;
     if (error != null) throw error;
-    final bytes = files[id] ?? const <int>[];
-    final streamError = fileStreamError?.call(id);
-    final stream = streamError == null
-        ? _chunks(bytes)
-        : Stream<List<int>>.fromFuture(Future<List<int>>.error(streamError));
-    return FileDownload(
-      bytes: stream,
-      contentLength: fileContentLengthOverride ?? bytes.length,
-    );
-  }
-
-  Stream<List<int>> _chunks(List<int> bytes) async* {
-    for (var i = 0; i < bytes.length; i += chunkSize) {
-      if (chunkDelay > Duration.zero) await Future<void>.delayed(chunkDelay);
-      yield bytes.sublist(i, (i + chunkSize).clamp(0, bytes.length));
-    }
+    final bytes = files[id];
+    if (bytes == null) throw notFound;
+    final file = File('${_dir.path}/$id.bin');
+    await file.writeAsBytes(bytes);
+    return file;
   }
 
   @override
-  Future<ConnectionReport> checkConnection() async {
-    calls.add('check');
-    final error = connectionError;
-    if (error != null) throw error;
-    return report;
+  Future<void> release(String id) async {
+    calls.add('release $id');
+    final file = File('${_dir.path}/$id.bin');
+    if (file.existsSync()) file.deleteSync();
   }
 
   @override
-  void close() => closed = true;
+  Future<void> cleanup(Set<String> keep) async {
+    calls.add('cleanup');
+    lastCleanupKeep = keep;
+  }
 }
 
 class FakeNativeMedia implements NativeMedia {
@@ -275,19 +268,3 @@ class FakeNativeMedia implements NativeMedia {
   @override
   Future<String> appVersion() async => '1.0.0 (1)';
 }
-
-class FakeSecretStore implements SecretStore {
-  final Map<String, String> values = {};
-
-  @override
-  Future<String?> read(String key) async => values[key];
-
-  @override
-  Future<void> write(String key, String value) async => values[key] = value;
-
-  @override
-  Future<void> delete(String key) async => values.remove(key);
-}
-
-AppSettings configuredSettings({ThemeMode mode = ThemeMode.system}) =>
-    AppSettings(serverUrl: 'http://10.0.2.2:8000', themeMode: mode);

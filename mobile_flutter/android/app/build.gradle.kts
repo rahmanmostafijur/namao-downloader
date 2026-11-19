@@ -39,6 +39,23 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // A universal APK carries the engine for every ABI; leave out 32-bit x86 (those phones are
+        // gone; x86_64 is the emulator). Per-ABI builds (--split-per-abi) pick their own ABI, and
+        // Gradle refuses a filter alongside splits.
+        if (!project.hasProperty("split-per-abi")) {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            }
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // youtubedl-android runs yt-dlp's Python and FFmpeg as separate processes straight
+            // from the app's native-library directory, so the libraries must be real files.
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {
@@ -54,6 +71,8 @@ android {
 
     buildTypes {
         release {
+            // Keep rules for the engine library (see the file for why).
+            proguardFiles("proguard-rules.pro")
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
@@ -72,4 +91,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // On-device engine (GPL-3.0): a Python 3.12 runtime + yt-dlp, QuickJS and FFmpeg builds.
+    // See docs/android-engine.md for the licence implications.
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
 }

@@ -6,19 +6,12 @@ import 'package:namao_app/core/models/job_status.dart';
 
 import '../support/fakes.dart';
 
-const _network = ApiException.network();
-const _notFound = ApiException(
-  kind: ApiFailureKind.server,
-  code: 'not_found',
-  message: 'Not found.',
-  status: 404,
+const _network = ApiException(
+  code: 'environment_unsupported',
+  message: 'Not ready.',
+  retryable: true,
 );
-const _unauthorized = ApiException(
-  kind: ApiFailureKind.server,
-  code: 'unauthorized',
-  message: 'no',
-  status: 401,
-);
+const _notFound = notFound;
 
 void main() {
   late FakeApi api;
@@ -138,12 +131,6 @@ void main() {
     expect(losses.single.$1, PollLoss.notFound);
     expect(api.calls.length, 1);
     expect(delays, isEmpty);
-  });
-
-  test('401 ends the watch immediately as unauthorized', () async {
-    api.script('job1', [_unauthorized]);
-    await poller().start();
-    expect(losses.single.$1, PollLoss.unauthorized);
   });
 
   test('stop() prevents further callbacks', () async {

@@ -1,38 +1,15 @@
+import 'dart:io';
+
 import '../models/job.dart';
 import '../models/video_metadata.dart';
 
-/// A finished file being streamed from the server.
-class FileDownload {
-  const FileDownload({required this.bytes, this.contentLength});
-
-  final Stream<List<int>> bytes;
-
-  /// From the response header; null when the server sent no length.
-  final int? contentLength;
-}
-
-/// Result of the settings "Test connection" probe.
-class ConnectionReport {
-  const ConnectionReport({
-    required this.ready,
-    required this.authorized,
-    this.failingChecks = const [],
-  });
-
-  /// `/health/ready` answered 200.
-  final bool ready;
-
-  /// The API key (or lack of one) is accepted by `/api/v1/*`.
-  final bool authorized;
-
-  /// Names of dependency checks the server reported as failing when not ready.
-  final List<String> failingChecks;
-
-  bool get isHealthy => ready && authorized;
-}
-
-/// The whole server surface the app uses. Thin on purpose: no extraction logic lives here.
+/// Everything the app asks of the downloader. The Android app implements it on the phone
+/// (`LocalNamaoApi`); screens and controllers only ever see this interface.
 abstract class NamaoApi {
+  /// Gets the engine ready (unpacks it on first launch). Safe to call again; throws
+  /// [ApiException] if the phone cannot run it.
+  Future<void> prepare();
+
   Future<VideoMetadata> metadata(String url);
 
   /// `idempotencyKey` must be new per user tap and reused only for a repeat of that tap.
@@ -42,11 +19,13 @@ abstract class NamaoApi {
 
   Future<Job> cancel(String id);
 
-  /// Opens the verified file (attachment, Range-capable). Throws [ApiException] on non-2xx.
-  Future<FileDownload> openFile(String id);
+  /// The finished file, ready to be moved into Downloads. Throws [ApiException] with a
+  /// job-gone code when it no longer exists.
+  Future<File> finishedFile(String id);
 
-  Future<ConnectionReport> checkConnection();
+  /// Deletes the job's working files (once the result is saved).
+  Future<void> release(String id);
 
-  /// Releases connections. A no-op for implementations that hold none.
-  void close() {}
+  /// Deletes the working files of every job not in [keep]: leftovers of crashes and removals.
+  Future<void> cleanup(Set<String> keep);
 }

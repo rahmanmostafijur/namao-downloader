@@ -3,26 +3,26 @@ import '../core/models/job.dart';
 import '../core/models/job_status.dart';
 import '../core/models/json_read.dart';
 
-/// State of getting the finished file onto this phone.
+/// State of moving the finished file into Downloads.
 enum SaveState {
-  /// Not started (job not finished, or about to start).
+  /// Not started (the download is not finished, or the save is about to start).
   none,
 
-  /// Streaming from the server / writing to MediaStore right now.
+  /// Writing into MediaStore right now.
   transferring,
 
-  /// In `Download/Namao`. The local file is now the artifact.
+  /// In `Download/Namao`. The saved file is now the artifact.
   saved,
 
-  /// The device transfer failed or was interrupted. "Retry save" is offered.
+  /// The save failed or was interrupted. "Retry save" is offered.
   failed,
 }
 
 /// Which list an entry belongs to.
 enum DownloadsTab { active, completed, failed }
 
-/// One client-side history record: the job the server knows about plus what happened on the
-/// phone. There is deliberately no list-jobs endpoint, so this is the only index of jobs.
+/// One history record: the download job plus what happened when its file was saved. Persisted
+/// on the phone, so it is the only index of past downloads and survives restarts.
 class HistoryEntry {
   const HistoryEntry({
     required this.jobId,
@@ -34,13 +34,12 @@ class HistoryEntry {
     required this.createdAt,
     this.thumbnail,
     this.job,
-    this.serverGone = false,
+    this.jobGone = false,
     this.saveState = SaveState.none,
     this.savedUri,
     this.savedName,
     this.savedBytes,
     this.saveError,
-    this.serverUrl,
   });
 
   factory HistoryEntry.fromJson(Map<String, dynamic> json) {
@@ -58,7 +57,7 @@ class HistoryEntry {
           DateTime.fromMillisecondsSinceEpoch(0),
       thumbnail: readString(json['thumbnail']),
       job: jobJson == null ? null : Job.fromJson(jobJson),
-      serverGone: json['server_gone'] == true,
+      jobGone: json['server_gone'] == true,
       saveState: SaveState.values.firstWhere(
         (s) => s.name == stateName,
         orElse: () => SaveState.none,
@@ -67,7 +66,6 @@ class HistoryEntry {
       savedName: readString(json['saved_name']),
       savedBytes: readInt(json['saved_bytes']),
       saveError: readString(json['save_error']),
-      serverUrl: readString(json['server_url']),
     );
   }
 
@@ -80,11 +78,12 @@ class HistoryEntry {
   final String platform;
   final DateTime createdAt;
 
-  /// Last job record received from the server.
+  /// Last job record seen.
   final Job? job;
 
-  /// The server answered 404/410 for this job before the file was saved (expired or reset).
-  final bool serverGone;
+  /// The download's record or finished file no longer exists on this phone, and it was never
+  /// saved (the system cleared the app's storage, or the entry came from an older version).
+  final bool jobGone;
 
   final SaveState saveState;
   final String? savedUri;
@@ -92,26 +91,19 @@ class HistoryEntry {
   final int? savedBytes;
   final String? saveError;
 
-  /// The server that owns this job. Job ids are capability tokens of ONE server, so an entry is
-  /// only tracked while that server is configured. Null for records written before this field.
-  final String? serverUrl;
-
-  bool isForServer(String? current) =>
-      serverUrl == null || serverUrl == current;
-
   JobStatus? get status => job?.status;
   bool get isSaved => saveState == SaveState.saved && savedUri != null;
 
-  /// Failed, cancelled or interrupted on the server (not "expired").
-  bool get isFailedOnServer => switch (status) {
+  /// Failed, cancelled or interrupted before a file was produced (not "gone").
+  bool get isFailed => switch (status) {
     JobStatus.failed || JobStatus.cancelled || JobStatus.interrupted => true,
     _ => false,
   };
 
-  /// True while the server is working or the file is on its way to the phone.
+  /// True while the download is running or the file is being moved into Downloads.
   bool get isActive {
     if (isSaved) return false;
-    if (serverGone) return false;
+    if (jobGone) return false;
     final s = status;
     if (s == null) return true;
     if (!s.isTerminal) return true;
@@ -121,22 +113,21 @@ class HistoryEntry {
 
   DownloadsTab get tab {
     if (isSaved) return DownloadsTab.completed;
-    if (serverGone || isFailedOnServer) return DownloadsTab.failed;
+    if (jobGone || isFailed) return DownloadsTab.failed;
     if (isActive) return DownloadsTab.active;
-    return DownloadsTab
-        .completed; // completed on the server, device save failed
+    return DownloadsTab.completed; // downloaded, but moving it into Downloads failed
   }
 
-  /// A job that finished on the server and whose file this app has not saved yet.
+  /// A download that finished and whose file has not been saved to Downloads yet.
   bool get needsSave =>
       status == JobStatus.completed &&
       !isSaved &&
-      !serverGone &&
+      !jobGone &&
       job?.result != null;
 
   HistoryEntry copyWith({
     Job? job,
-    bool? serverGone,
+    bool? jobGone,
     SaveState? saveState,
     String? savedUri,
     String? savedName,
@@ -155,18 +146,17 @@ class HistoryEntry {
       createdAt: createdAt,
       thumbnail: thumbnail,
       job: job ?? this.job,
-      serverGone: serverGone ?? this.serverGone,
+      jobGone: jobGone ?? this.jobGone,
       saveState: saveState ?? this.saveState,
       savedUri: clearSaved ? null : (savedUri ?? this.savedUri),
       savedName: clearSaved ? null : (savedName ?? this.savedName),
       savedBytes: clearSaved ? null : (savedBytes ?? this.savedBytes),
       saveError: clearSaveError ? null : (saveError ?? this.saveError),
-      serverUrl: serverUrl,
     );
   }
 
-  /// The most specific error to show: the server's job error.
-  ApiErrorBody? get serverError => job?.error;
+  /// The most specific error to show: the job's own error.
+  ApiErrorBody? get jobError => job?.error;
 
   Map<String, dynamic> toJson() => {
     'job_id': jobId,
@@ -178,12 +168,12 @@ class HistoryEntry {
     'platform': platform,
     'created_at': createdAt.toIso8601String(),
     'job': job?.toJson(),
-    'server_gone': serverGone,
+    // Key name kept from the first version so existing history still loads.
+    'server_gone': jobGone,
     'save_state': saveState.name,
     'saved_uri': savedUri,
     'saved_name': savedName,
     'saved_bytes': savedBytes,
     'save_error': saveError,
-    'server_url': serverUrl,
   };
 }

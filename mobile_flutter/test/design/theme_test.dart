@@ -6,7 +6,6 @@ import 'package:namao_app/design/theme.dart';
 import 'package:namao_app/design/tokens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../support/fakes.dart';
 import '../support/harness.dart';
 import '../support/pump_app.dart';
 
@@ -160,7 +159,6 @@ void main() {
       SharedPreferences.setMockInitialValues({'settings.theme_mode': 'light'});
       final h = await TestHarness.create(
         prefsValues: {'settings.theme_mode': 'light'},
-        settings: configuredSettings(mode: ThemeMode.light),
       );
       addTearDown(h.dispose);
       await pumpNamao(tester, h, platformBrightness: Brightness.dark);

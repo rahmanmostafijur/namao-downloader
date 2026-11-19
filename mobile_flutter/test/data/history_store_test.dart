@@ -25,10 +25,10 @@ HistoryEntry entry(
   job: makeJob(
     id: id,
     status: status,
-    result: status == JobStatus.completed ? makeResult(id: id) : null,
+    result: status == JobStatus.completed ? makeResult() : null,
   ),
   saveState: save,
-  serverGone: gone,
+  jobGone: gone,
 );
 
 Future<HistoryStore> storeWith([Map<String, Object> initial = const {}]) async {

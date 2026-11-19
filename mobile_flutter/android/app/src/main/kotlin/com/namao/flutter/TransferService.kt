@@ -11,10 +11,10 @@ import android.os.IBinder
 
 /**
  * A foreground service with no logic of its own. While it runs, Android keeps the app process
- * (and the Dart isolate streaming the file from the server) at foreground priority, so the
- * phone-side transfer survives the user switching apps. It does NOT survive the user swiping
- * the app away from Recents: that destroys the Flutter engine, and the transfer is detected as
- * interrupted on the next launch ("Retry save").
+ * (the downloader and the Dart code tracking it) at foreground priority, so a download survives
+ * the user switching apps. It does NOT survive the user swiping the app away from Recents: that
+ * destroys the Flutter engine, the running download is stopped, and it shows as interrupted
+ * (with Retry) on the next launch.
  */
 class TransferService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -27,7 +27,7 @@ class TransferService : Service() {
         // startForeground promptly or Android raises an error.
         startForeground(
             NOTIFICATION_ID,
-            build(this, -1, "Saving to Downloads/Namao"),
+            build(this, -1, "Preparing your download…"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
     }
@@ -61,8 +61,8 @@ class TransferService : Service() {
             val manager = context.getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL_ID) != null) return
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Saving videos", NotificationManager.IMPORTANCE_LOW)
-                    .apply { description = "Shown while a finished download is copied to this phone." },
+                NotificationChannel(CHANNEL_ID, "Downloads", NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = "Shown while Namao is downloading a video." },
             )
         }
 

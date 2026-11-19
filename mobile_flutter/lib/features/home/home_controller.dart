@@ -90,9 +90,6 @@ final homeProvider = NotifierProvider<HomeController, HomeState>(
 class HomeController extends Notifier<HomeState> {
   int _requestSeq = 0;
 
-  /// Idempotency key of a tap that has not been answered yet, with what it was for.
-  ({String key, String signature})? _pending;
-
   @override
   HomeState build() => const HomeState();
 
@@ -106,14 +103,11 @@ class HomeController extends Notifier<HomeState> {
 
   Future<void> fetchFormats() async {
     final check = state.check;
-    final api = ref.read(apiProvider);
-    if (!check.isValid || api == null || state.phase == HomePhase.loading) {
-      return;
-    }
+    if (!check.isValid || state.phase == HomePhase.loading) return;
     final seq = ++_requestSeq;
     state = HomeState(input: state.input, phase: HomePhase.loading);
     try {
-      final metadata = await api.metadata(check.url!);
+      final metadata = await ref.read(apiProvider).metadata(check.url!);
       if (seq != _requestSeq) return;
       state = HomeState(
         input: state.input,
@@ -126,17 +120,13 @@ class HomeController extends Notifier<HomeState> {
       state = HomeState(
         input: state.input,
         phase: HomePhase.error,
-        error: presentApiError(
-          error,
-          serverUrl: ref.read(connectionProvider).url,
-        ),
+        error: presentApiError(error),
       );
     }
   }
 
   void selectFormat(String id) {
     if (state.phase != HomePhase.loaded) return;
-    if (id != state.selectedFormatId) _pending = null;
     state = state.copyWith(
       selectedFormatId: id,
       clearStartError: true,
@@ -144,8 +134,7 @@ class HomeController extends Notifier<HomeState> {
     );
   }
 
-  /// One tap = one idempotency key. The key is reused only to repeat a tap that failed to get
-  /// an answer, so a lost response can never create two jobs.
+  /// One tap = one download: a fresh idempotency key each time, and `isStarting` blocks a second tap.
   Future<void> startDownload() async {
     final format = state.selectedFormat;
     final metadata = state.metadata;
@@ -153,11 +142,6 @@ class HomeController extends Notifier<HomeState> {
     if (format == null || metadata == null || url == null || state.isStarting) {
       return;
     }
-    final signature = '$url|${format.id}';
-    final pending = _pending?.signature == signature
-        ? _pending!
-        : (key: ref.read(idGeneratorProvider)(), signature: signature);
-    _pending = pending;
     state = state.copyWith(
       isStarting: true,
       clearStartError: true,
@@ -170,29 +154,24 @@ class HomeController extends Notifier<HomeState> {
             sourceUrl: url,
             metadata: metadata,
             format: format,
-            idempotencyKey: pending.key,
+            idempotencyKey: ref.read(idGeneratorProvider)(),
           );
-      _pending = null;
       state = state.copyWith(
         isStarting: false,
         addedJobId: entry.jobId,
         clearSelection: true,
       );
     } on ApiException catch (error) {
-      if (_isDefinitiveRejection(error)) _pending = null;
       state = state.copyWith(
         isStarting: false,
-        startError: presentApiError(
-          error,
-          serverUrl: ref.read(connectionProvider).url,
-        ),
+        startError: presentApiError(error),
       );
     } on Object {
       // Unexpected local failure: never leave the button stuck in its loading state.
       state = state.copyWith(
         isStarting: false,
         startError: const ErrorPresentation(
-          message: 'Something went wrong starting the download.',
+          message: genericFailureMessage,
           retryable: true,
         ),
       );
@@ -200,17 +179,4 @@ class HomeController extends Notifier<HomeState> {
   }
 
   void dismissConfirmation() => state = state.copyWith(clearAdded: true);
-
-  /// A 4xx (other than timeout/rate-limit) means the server saw the request and refused it, so
-  /// no job exists and the next tap may use a new key. Anything else (network, 5xx, 429, 408)
-  /// may have created the job before the answer was lost, so the key is kept.
-  bool _isDefinitiveRejection(ApiException error) {
-    final status = error.status;
-    return error.kind == ApiFailureKind.server &&
-        status != null &&
-        status >= 400 &&
-        status < 500 &&
-        status != 408 &&
-        status != 429;
-  }
 }

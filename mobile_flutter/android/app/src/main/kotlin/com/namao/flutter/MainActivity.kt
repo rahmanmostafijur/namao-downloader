@@ -29,17 +29,24 @@ class MediaException(val code: String, message: String) : Exception(message)
 class MainActivity : FlutterActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var pendingNotificationResult: MethodChannel.Result? = null
+    private var engineChannel: EngineChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(messenger, CHANNEL)
             .setMethodCallHandler { call, result -> dispatch(call, result) }
+        engineChannel = EngineChannel(this, messenger, LocalEngine.get(applicationContext))
     }
 
     override fun onDestroy() {
-        // Leaving the app destroys the Flutter engine, and with it any transfer. The service has no
-        // work of its own, so it must not outlive the activity with a stale notification.
-        if (isFinishing) stopService(Intent(this, TransferService::class.java))
+        // Leaving the app destroys the Flutter engine, and with it the progress tracking. The service
+        // has no work of its own, so it must not outlive the activity with a stale notification, and
+        // a download nobody can see any more is stopped rather than left running unseen.
+        if (isFinishing) {
+            stopService(Intent(this, TransferService::class.java))
+            engineChannel?.close()
+        }
         worker.shutdown()
         super.onDestroy()
     }

@@ -18,7 +18,7 @@ class JobView {
     this.bytesLine = '',
   });
 
-  /// Shared status wording (identical to the web client).
+  /// Plain status wording, with no technical terms.
   final String label;
   final StatusTone tone;
   final bool isTerminal;
@@ -38,21 +38,16 @@ class JobView {
 String statusLabel(Job job) {
   switch (job.status) {
     case JobStatus.queued:
-      return job.attempt > 0
-          ? 'Retrying (attempt ${job.attempt + 1} of ${job.maxAttempts})…'
-          : 'Waiting in queue…';
     case JobStatus.validating:
-      return 'Checking link…';
     case JobStatus.fetchingMetadata:
-      return 'Reading video info…';
+      return 'Preparing your download…';
     case JobStatus.downloading:
       return _hasRealPercent(job)
           ? 'Downloading ${formatPercent(job.progress.percent)}'
           : 'Downloading…';
     case JobStatus.merging:
-      return 'Merging audio and video…';
     case JobStatus.verifying:
-      return 'Verifying file…';
+      return 'Finishing…';
     case JobStatus.completed:
       return 'Ready';
     case JobStatus.failed:

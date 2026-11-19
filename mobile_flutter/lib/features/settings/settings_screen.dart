@@ -6,13 +6,13 @@ import '../../design/feedback.dart';
 import '../../design/surfaces.dart';
 import '../../design/tokens.dart';
 import '../downloads/downloads_state.dart';
-import 'server_form.dart';
 
 /// Shown in About. Kept as one constant so the wording is reviewed in one place.
 const String aboutLimits =
     'Namao is for personal use with videos you are allowed to download. It does not '
     'bypass logins, paywalls or DRM, and it can only fetch what the source site serves '
-    'to your server. Sites change often; if a download starts failing, update the server.';
+    'publicly. Sites change often; if a download starts failing, connect to the internet '
+    'and reopen Namao so it can refresh itself.';
 
 final appVersionProvider = FutureProvider<String>((ref) async {
   try {
@@ -47,14 +47,6 @@ class SettingsScreen extends ConsumerWidget {
                 child: Text(
                   'Settings',
                   style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              const SizedBox(height: NamaoSpace.xl),
-              const SectionLabel('Server'),
-              NamaoCard(
-                child: ServerForm(
-                  saveLabel: 'Save',
-                  onSaved: () => showNamaoSnack(context, 'Server saved'),
                 ),
               ),
               const SizedBox(height: NamaoSpace.xl),
@@ -208,12 +200,21 @@ class _AboutCard extends ConsumerWidget {
           ),
           const SizedBox(height: NamaoSpace.m),
           Text(
-            'A thin client for your own Namao server. All downloading and processing '
-            'happens on the server; this app shows its real progress and saves the finished file.',
+            'Paste a video link, pick a quality, and Namao saves it straight to your phone. '
+            'No account and no setup needed.',
             style: text.bodyMedium,
           ),
           const SizedBox(height: NamaoSpace.m),
           Text(aboutLimits, style: text.bodySmall),
+          const SizedBox(height: NamaoSpace.m),
+          OutlinedButton(
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'Namao',
+              applicationVersion: version,
+            ),
+            child: const Text('Open-source licenses'),
+          ),
         ],
       ),
     );

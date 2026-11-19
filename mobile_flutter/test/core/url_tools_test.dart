@@ -2,81 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:namao_app/core/url_tools.dart';
 
 void main() {
-  group('normalizeServerUrl', () {
-    test('requires an explicit http or https scheme', () {
-      expect(normalizeServerUrl('192.168.1.20:8000').isValid, isFalse);
-      expect(normalizeServerUrl('ftp://example.com').isValid, isFalse);
-      expect(normalizeServerUrl('192.168.1.20:8000').error, contains('http'));
-    });
-
-    test('strips trailing slashes and whitespace', () {
-      expect(
-        normalizeServerUrl('  http://10.0.2.2:8000/  ').url,
-        'http://10.0.2.2:8000',
-      );
-      expect(
-        normalizeServerUrl('https://namao.example.com///').url,
-        'https://namao.example.com',
-      );
-    });
-
-    test('keeps a reverse-proxy path prefix', () {
-      expect(
-        normalizeServerUrl('https://host.example/namao/').url,
-        'https://host.example/namao',
-      );
-    });
-
-    test('rejects empty, credentials, query and fragment', () {
-      expect(normalizeServerUrl('').error, isNotNull);
-      expect(
-        normalizeServerUrl('http://user:pw@host').error,
-        contains('API key'),
-      );
-      expect(normalizeServerUrl('http://host/?key=1').isValid, isFalse);
-      expect(normalizeServerUrl('http://host/#x').isValid, isFalse);
-      expect(normalizeServerUrl('http://').isValid, isFalse);
-    });
-
-    test('keeps IPv6 hosts bracketed', () {
-      expect(normalizeServerUrl('http://[::1]:8000/').url, 'http://[::1]:8000');
-    });
-  });
-
-  group('isPrivateHost / needsCleartextWarning', () {
-    test('private and local addresses are fine over http', () {
-      for (final host in [
-        'localhost',
-        '127.0.0.1',
-        '10.0.2.2',
-        '192.168.1.20',
-        '172.16.5.4',
-        '172.31.255.255',
-        '169.254.1.1',
-        'nas.local',
-        'myserver',
-        '::1',
-        'fd00::1',
-      ]) {
-        expect(isPrivateHost(host), isTrue, reason: host);
-      }
-    });
-
-    test('public addresses are not private', () {
-      for (final host in ['example.com', '8.8.8.8', '172.32.0.1', '11.0.0.1']) {
-        expect(isPrivateHost(host), isFalse, reason: host);
-      }
-    });
-
-    test('warns only for plain http to a public host', () {
-      expect(needsCleartextWarning('http://example.com'), isTrue);
-      expect(needsCleartextWarning('http://203.0.113.9:8000'), isTrue);
-      expect(needsCleartextWarning('https://example.com'), isFalse);
-      expect(needsCleartextWarning('http://192.168.1.2:8000'), isFalse);
-      expect(needsCleartextWarning('not a url'), isFalse);
-    });
-  });
-
   group('detectPlatform', () {
     test('matches the web client hosts', () {
       const cases = {
@@ -155,10 +80,5 @@ void main() {
     );
     expect(checkVideoUrl('two words', allowAnyHost: true).isValid, isFalse);
     expect(kAllowAnyLink, isFalse, reason: 'normal builds never enable it');
-  });
-
-  test('serverLabel names host and port', () {
-    expect(serverLabel('http://10.0.2.2:8000'), '10.0.2.2:8000');
-    expect(serverLabel('https://namao.example.com'), 'namao.example.com');
   });
 }

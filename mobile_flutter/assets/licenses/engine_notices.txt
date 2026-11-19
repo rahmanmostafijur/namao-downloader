@@ -1,0 +1,26 @@
+Namao saves videos on your phone using these open-source components, which are bundled in the app.
+
+youtubedl-android
+Copyright (c) the youtubedl-android contributors
+https://github.com/yausername/youtubedl-android
+Licensed under the GNU General Public License v3.0 (full text below). This library packages the downloader runtime and the FFmpeg and Python builds listed here. Its source code, including the build scripts for those binaries, is available at the address above.
+
+yt-dlp
+https://github.com/yt-dlp/yt-dlp
+Released into the public domain under The Unlicense.
+
+FFmpeg
+https://ffmpeg.org
+Licensed under the GNU Lesser General Public License v2.1 or later, or the GNU General Public License v2 or later, depending on how it is built. The build bundled here comes from the youtubedl-android project (see above).
+
+Python
+https://www.python.org
+Copyright (c) Python Software Foundation. Licensed under the Python Software Foundation License Version 2 (https://docs.python.org/3/license.html).
+
+QuickJS
+https://bellard.org/quickjs/
+Copyright (c) Fabrice Bellard and Charlie Gordon. Licensed under the MIT License.
+
+Python packages used by yt-dlp (for example brotli, certifi, pycryptodomex and websockets) are included in the Python build and keep their own licenses.
+
+Namao itself is a separate application. Namao is not affiliated with YouTube, Facebook, TikTok, Instagram, X or any other site, and does not circumvent DRM or access controls.

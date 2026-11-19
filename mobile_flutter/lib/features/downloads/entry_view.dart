@@ -3,10 +3,9 @@ import '../../core/formatting.dart';
 import '../../core/job_poller.dart';
 import '../../core/job_view.dart';
 import '../../core/models/job_status.dart';
-import '../../core/url_tools.dart';
 import '../../data/history_entry.dart';
 
-/// Everything a downloads row shows, derived from the history record (server job + device state).
+/// Everything a downloads row shows, derived from the history record (job + what happened when saving).
 class EntryView {
   const EntryView({
     required this.label,
@@ -58,28 +57,20 @@ class EntryView {
   final bool canRefresh;
 }
 
-EntryView describeEntry(
-  HistoryEntry entry, {
-  PollLoss? lost,
-  int? transferBytes,
-  bool otherServer = false,
-}) {
+EntryView describeEntry(HistoryEntry entry, {PollLoss? lost}) {
   if (entry.isSaved) return _saved(entry);
-  if (otherServer) return _otherServer(entry);
-  if (entry.serverGone) return _expired(entry);
+  if (entry.jobGone) return _unavailable(entry);
   final job = entry.job;
   if (job == null) {
     return EntryView(
-      label: 'Waiting in queue…',
+      label: 'Preparing your download…',
       tone: StatusTone.active,
       tab: entry.tab,
       showProgress: true,
       canCancel: true,
     );
   }
-  if (job.status == JobStatus.completed) {
-    return _completedOnServer(entry, transferBytes);
-  }
+  if (job.status == JobStatus.completed) return _finished(entry);
   return _fromJob(entry, lost);
 }
 
@@ -99,41 +90,25 @@ EntryView _saved(HistoryEntry entry) {
   );
 }
 
-EntryView _otherServer(HistoryEntry entry) => EntryView(
-  label: 'On another server',
-  tone: StatusTone.neutral,
-  tab: entry.tab,
-  message:
-      'This download belongs to ${serverLabel(entry.serverUrl ?? 'another server')}. '
-      'Switch back to that server in Settings to keep tracking it.',
-  canRemove: true,
-);
-
-EntryView _expired(HistoryEntry entry) => const EntryView(
-  label: 'Expired',
+EntryView _unavailable(HistoryEntry entry) => const EntryView(
+  label: 'No longer available',
   tone: StatusTone.danger,
   tab: DownloadsTab.failed,
-  message: 'The server no longer has this download. Retry fetches it again from the source.',
+  message: 'This download is no longer on this phone. Retry downloads it again.',
   messageIsError: true,
   canRetry: true,
   canRemove: true,
 );
 
-EntryView _completedOnServer(HistoryEntry entry, int? transferBytes) {
-  final total = entry.job?.result?.sizeBytes ?? 0;
-  final size = formatBytes(total) ?? '';
+EntryView _finished(HistoryEntry entry) {
+  final size = formatBytes(entry.job?.result?.sizeBytes ?? 0) ?? '';
   switch (entry.saveState) {
     case SaveState.transferring:
-      final known = total > 0 && transferBytes != null;
       return EntryView(
-        label: known
-            ? 'Saving to phone ${formatPercent(transferBytes * 100 / total)}'
-            : 'Saving to phone…',
+        label: 'Finishing…',
         tone: StatusTone.active,
         tab: entry.tab,
-        progress: known ? transferBytes / total : null,
         showProgress: true,
-        bytesLine: known ? '${formatBytes(transferBytes)} / $size' : '',
       );
     case SaveState.failed:
       return EntryView(
@@ -152,7 +127,7 @@ EntryView _completedOnServer(HistoryEntry entry, int? transferBytes) {
         label: 'Ready',
         tone: StatusTone.success,
         tab: entry.tab,
-        message: 'Preparing to save…',
+        message: 'Finishing…',
         showProgress: true,
         sizeLine: size,
       );
@@ -162,7 +137,7 @@ EntryView _completedOnServer(HistoryEntry entry, int? transferBytes) {
 EntryView _fromJob(HistoryEntry entry, PollLoss? lost) {
   final job = entry.job!;
   final view = describeJob(job);
-  final failed = entry.isFailedOnServer;
+  final failed = entry.isFailed;
   final presentation = failed ? presentJobError(job.error) : null;
   final showCancelledMessage = job.status != JobStatus.cancelled;
   return EntryView(
@@ -186,8 +161,7 @@ EntryView _fromJob(HistoryEntry entry, PollLoss? lost) {
 }
 
 String? _lostMessage(PollLoss? lost) => switch (lost) {
-  PollLoss.unauthorized => 'The server rejected the API key, so progress can’t be updated. Check Settings.',
   PollLoss.unreachable =>
-    'Lost contact with the server. The download may still be running.',
+    "Can't update the progress right now. The download may still be running.",
   _ => null,
 };
