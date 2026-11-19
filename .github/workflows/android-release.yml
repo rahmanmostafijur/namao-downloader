@@ -1,0 +1,200 @@
+name: Android release
+
+# Publishes a signed APK as a GitHub Release when a version tag is pushed (e.g. v1.0.0).
+# Nothing here can produce a "successful" release if analysis, tests, signing or verification fail:
+# every step is fatal, and the release job only runs after the build job succeeded.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions), see docs/releasing.md:
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+# Required repository variable:
+#   ANDROID_CERT_SHA256  (SHA-256 of the signing certificate; the build fails if the APK is signed with anything else)
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.47.5"
+  APK_NAME: namao-android.apk
+
+jobs:
+  build:
+    name: Build, sign and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read # the only job that sees the signing secrets cannot write to the repository
+    defaults:
+      run:
+        working-directory: mobile_flutter
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tagged commit must be on main
+        working-directory: .
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::Tag $GITHUB_REF_NAME does not point at a commit on main. Release only from main."
+            exit 1
+          }
+
+      - name: Tag must match pubspec.yaml
+        id: meta
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          line=$(grep -E '^version:' pubspec.yaml)
+          version=$(echo "$line" | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+).*/\1/')
+          build=$(echo "$line" | sed -E 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+).*/\2/')
+          if ! echo "$line" | grep -Eq '^version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+'; then
+            echo "::error::pubspec.yaml version must look like 1.2.3+4 (got: $line)"; exit 1
+          fi
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match pubspec.yaml version $version. Bump pubspec.yaml first."; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version (build $build)"
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format check
+        run: dart format --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Decode signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret for $name. A release must not be built without the release key (see docs/releasing.md)."
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/namao-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          {
+            echo "NAMAO_KEYSTORE_PATH=$keystore"
+            echo "NAMAO_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "NAMAO_KEY_ALIAS=$KEY_ALIAS"
+            echo "NAMAO_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Verify the signature
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          out=$("$apksigner" verify --verbose --print-certs "$apk")
+          echo "$out" | grep -E "^Verifies|Verified using|certificate DN|SHA-256 digest" || true
+          echo "$out" | grep -q "^Verifies" || { echo "::error::apksigner did not verify the APK"; exit 1; }
+          if echo "$out" | grep -qi "Android Debug"; then
+            echo "::error::The APK is signed with the DEBUG key. Refusing to publish."; exit 1
+          fi
+          actual=$(echo "$out" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          expected=$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': \r\n' | tr 'A-F' 'a-f')
+          if [ -z "$expected" ]; then
+            echo "::error::Repository variable ANDROID_CERT_SHA256 is not set; cannot confirm the signing identity."; exit 1
+          fi
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Signing certificate $actual is not the expected $expected. A different key would break in-place updates."; exit 1
+          fi
+          echo "Signing certificate matches the expected release identity."
+
+      - name: Package APK and checksum
+        run: |
+          mkdir -p ../dist
+          cp build/app/outputs/flutter-apk/app-release.apk "../dist/$APK_NAME"
+          (cd ../dist && sha256sum "$APK_NAME" > "$APK_NAME.sha256" && cat "$APK_NAME.sha256" && ls -l)
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/namao-release.jks"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the release; this job never sees the signing key
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: android-release
+          path: dist
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist
+          size=$(stat -c %s "$APK_NAME")
+          sha=$(cut -d' ' -f1 "$APK_NAME.sha256")
+          notes=../docs/release-notes/$TAG.md
+          {
+            if [ -f "$notes" ]; then cat "$notes"; else echo "Release $VERSION."; fi
+            echo
+            echo "## Download and verify"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| File | \`$APK_NAME\` |"
+            echo "| Size | $(numfmt --to=iec --suffix=B "$size") ($size bytes) |"
+            echo "| SHA-256 | \`$sha\` |"
+            echo
+            echo "Verify after downloading: \`sha256sum $APK_NAME\` (Linux/macOS) or \`certutil -hashfile $APK_NAME SHA256\` (Windows) must print the SHA-256 above."
+          } > ../release-body.md
+          gh release create "$TAG" "$APK_NAME" "$APK_NAME.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Namao $VERSION" \
+            --notes-file ../release-body.md

@@ -7,15 +7,26 @@ android/.gradle/
 android/app/build/
 android/build/
 android/local.properties
+# Binaries are distributed through GitHub Releases, never committed
 *.apk
 *.aab
-!/Namao.apk
 .DS_Store
 .claude
+
+# Android signing material and credentials: never commit
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+key.properties
+credentials.txt
 
 # Namao runtime state and secrets
 data/
 .env
+.env.*
+!.env.example
 *.db
 *.db-wal
 *.db-shm

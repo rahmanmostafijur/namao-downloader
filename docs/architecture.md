@@ -61,7 +61,7 @@ Machine-readable contract: [`openapi.json`](openapi.json) (generated from the ap
 | `GET  /api/v1/downloads/{id}/progress` | Server-sent events of the same job object. |
 | `POST /api/v1/downloads/{id}/cancel` | Cancel. |
 | `GET  /api/v1/downloads/{id}/file` | The verified file (`attachment`, `nosniff`, Range supported). |
-| `GET  /health/live`, `/health/ready` | Process alive / dependencies ready (engine, FFmpeg, FFprobe, JS runtime, EJS, database, disk, worker). |
+| `GET  /health/live`, `/health/ready` | Process alive (`{"status","version","desktop"}`; `desktop` tells the web client whether the desktop-only endpoints exist) / dependencies ready (engine, FFmpeg, FFprobe, JS runtime, EJS, database, disk, worker). |
 
 All errors, HTTP and per-job, share one shape: `{"error": {"code", "message", "retryable", "detail?"}}`.
 `detail` (sanitized engine text) is omitted unless `NAMAO_EXPOSE_ERROR_DETAIL=1`.
@@ -93,8 +93,9 @@ the global queue. Idempotency keys are scoped to the client.
 
 | Client | Code | Status |
 |---|---|---|
-| Web | `static/` (`index.html`, `app.js`) | Job API, SSE with polling fallback, cancel/retry, 16 unit tests, exercised in a real browser. |
+| Web | `static/` (`index.html`, `styles.css`, `app.js` core, `history.js`, `dom.js`, `components.js`, `main.js`) | Four views (Download, Downloads, Settings, About) behind a hash router. Job API with SSE and polling fallback, cancel/retry, client-side history (the server has no list endpoint by design), light/dark/system theme, desktop save-folder settings. No framework or build step; all text is inserted as text nodes (CSP `script-src 'self'`). 44 unit tests; exercised in a real browser (Lighthouse accessibility 100 on Settings and Downloads). |
 | Desktop (Windows/macOS/Linux) | `launcher.py`, `Namao.spec` | Windows exe built and run end to end. macOS/Linux builds are defined in CI, **not run here**. |
+| Android (Flutter) | `mobile_flutter/` (Flutter 3.47, Riverpod, `minSdk 29`) | Thin client of `/api/v1`: polling with backoff, client-side history (no list endpoint), byte-exact file transfer into MediaStore `Download/Namao` under a foreground service. 262 tests (93.5 % line coverage), 7 real-server integration tests, release APK built and run on an API 36 emulator. Not run on a physical device; background transfer does not survive the app being swiped away (detected at next launch, "Retry save"). Details and limits: `mobile_flutter/README.md`. |
 | Mobile (iOS/Android) | `mobile/` (Expo SDK 57) | Typecheck, 17 tests, JS bundles and Android prebuild verified; native builds and iOS prebuild **not verified**. |
 | Android (native, legacy) | `android/` | Separate standalone app embedding its own yt-dlp (youtubedl-android 0.18.1, bundled Python 3.8). **Unchanged and unverified**: current yt-dlp requires Python ≥ 3.10, so its on-device engine freshness is unknown. Treat `mobile/` against a server as the supported Android path. |
 

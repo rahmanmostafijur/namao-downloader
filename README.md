@@ -4,12 +4,36 @@ A self-hosted video downloader for YouTube, Facebook, TikTok, X (Twitter) and In
 the source really offers, watch real progress, save the file. Extraction is done by
 [yt-dlp](https://github.com/yt-dlp/yt-dlp), merging and verification by FFmpeg/FFprobe. No paid downloading API.
 
+## Download the Android app
+
+[**Download Latest Android APK**](https://github.com/rahmanmostafijur/namao-downloader/releases/latest/download/namao-android.apk)
+· [All releases and release notes](https://github.com/rahmanmostafijur/namao-downloader/releases)
+· SHA-256: [`namao-android.apk.sha256`](https://github.com/rahmanmostafijur/namao-downloader/releases/latest/download/namao-android.apk.sha256)
+
+**The app is a client, not a downloader.** It needs a Namao server you run yourself (see [Run it](#run-it)); you
+enter the server's address on first launch. Without a server it has nothing to talk to.
+
+- **Requires Android 10 (API 29) or newer.**
+- **Install:** open the downloaded `namao-android.apk` on your phone and allow *Install unknown apps* for your browser
+  or file manager when Android asks. Then open **Namao**, enter your server address (the same Wi-Fi address, e.g.
+  `http://192.168.1.20:8000`, or an https URL) and tap **Test connection**.
+- **Update:** install the newer `namao-android.apk` over the old one. History and settings are kept because every
+  release is signed with the same key. Check the [releases page](https://github.com/rahmanmostafijur/namao-downloader/releases) for new versions; the app does not update itself.
+- **Verify the download (recommended):** the SHA-256 is shown in each release's notes. On Windows run
+  `certutil -hashfile namao-android.apk SHA256`; on Linux/macOS `sha256sum namao-android.apk`. The values must match.
+  The signing certificate (`CN=Namao`) has the SHA-256 fingerprint
+  `40:1F:F6:12:39:C7:48:0A:DB:91:6A:5A:94:D6:AC:23:E9:54:E5:12:47:A2:8A:CE:AC:14:94:9A:64:6F:46:C6`
+  (check with `apksigner verify --print-certs namao-android.apk`).
+- Tested on an Android 16 (API 36) emulator and with automated tests; not yet on a physical device. Maintainers: see
+  [docs/releasing.md](docs/releasing.md).
+
 One server, one API (`/api/v1/downloads/*`), three kinds of client:
 
 | Client | Where | Notes |
 |---|---|---|
 | Web | `static/` | Served by the server itself. |
 | Desktop (Windows / macOS / Linux) | `launcher.py`, `Namao.spec` | One-file app with the worker built in; saves to a folder you choose. Windows build verified; macOS/Linux built in CI only. |
+| Android (Flutter) | `mobile_flutter/` | Native-feeling Material 3 app, a thin client of the same API. Saves into `Download/Namao` via MediaStore (no storage permission). Android 10+. Verified on an emulator and against a real server; see [mobile_flutter/README.md](mobile_flutter/README.md). |
 | Mobile (iOS / Android) | `mobile/` | Expo app that controls your server and saves the result to the phone. Native builds not verified here. |
 
 The older standalone Android app in `android/` is unchanged (it embeds its own engine); see
@@ -56,6 +80,7 @@ and rollback procedure, and 362 + 16 + 17 automated tests (Python + web + mobile
 | [docs/download-reliability.md](docs/download-reliability.md) | Dependency chain, failure codes, release management, upstream-change runbook. |
 | [docs/deployment.md](docs/deployment.md) | Hosting, limits, TLS, updating, rollback, desktop, troubleshooting, costs. |
 | [docs/testing.md](docs/testing.md) | How to run everything and what was actually run. |
+| [docs/releasing.md](docs/releasing.md) | Publishing a new Android version, the signing key, and verifying a published APK. |
 | [docs/openapi.json](docs/openapi.json) | The API schema (generated; a test keeps it current). |
 | [mobile/README.md](mobile/README.md) | The mobile client and its verification status. |
 

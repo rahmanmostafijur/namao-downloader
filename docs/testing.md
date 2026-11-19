@@ -19,16 +19,22 @@ environment**; their YAML parses and `docker compose config` validates, nothing 
 
 | Suite | Result |
 |---|---|
-| Python (`tests/`) | **362 passed**, 5 skipped (4 opt-in live tests; 1 symlink test that needs privileges on Windows), 93 % line coverage of `namao/` |
+| Python (`tests/`) | **364 passed**, 5 skipped (4 opt-in live tests; 1 symlink test that needs privileges on Windows); 93 % line coverage of `namao/` was measured on the earlier 362-test run (2026-10-20) and not re-measured after the two new `/health/live` tests |
 | Python live (`NAMAO_LIVE_TESTS=1`) | 4 passed earlier the same day on the pinned nightly and on 2026.8.19; later runs from the same IPv4 address were throttled by YouTube (see download-reliability.md) |
-| Web client (`node --test`) | 16 passed |
+| Web client (`node --test`) | **47 passed** (core/API client, history store incl. cross-tab adoption, action rules, a guard that no client script injects markup and every element id the controller uses exists). Browser-verified 2026-11-19 against a real API + worker with a scripted engine: download, live progress, cancel, retry (triple click → one job), orphaned job → 404 path, expired/cancelled/failed states, desktop save-to-folder (file verified on disk), light/dark/system themes, 390 px and 1280 px layouts, empty console. Lighthouse (snapshot) accessibility/best-practices/SEO 100 on Settings (desktop) and Downloads (mobile). |
 | Mobile (`jest`) | 17 passed; strict `tsc` clean; Metro bundles for android + ios built; Android `expo prebuild` ok |
 | Docker | image built; `api` + `worker` healthy; `/health/ready` ready with Deno 2.9.7, FFmpeg 5.1.9; real 360p download, graceful-stop → `interrupted`, drain/rebuild/resume exercised |
 | Desktop (Windows) | `Namao.exe` built (28 MB, rebuilt after the final changes); `--check` ok; no-token 403 then token 303 + cookie; real merge of a local DASH stream through the frozen app; save-to-folder; 401/403 guards |
+| Flutter Android (`mobile_flutter/`) | `flutter analyze` 0 issues; `flutter test` **262 passed, 7 skipped**, 93.5 % of lines (2,340/2,502, re-measured independently 2026-11-19); the 7 skipped are the real-server tests, which also **passed 7/7** when run against the real backend (`mobile_flutter/tool/run_test_server.py`: real yt-dlp + FFmpeg + FFprobe on a synthetic DASH stream). Release APK built (55 MB, `com.namao.flutter`, permissions: internet, foreground service, notifications). Per the app's README it was also installed and driven on an API 36 emulator (save to `Download/Namao`, duplicate renaming, open/share, interrupted-transfer retry, light/dark, 1.5× font scale); I reviewed its screenshots but did not repeat the emulator run. The emulator runs used a verification build with the test-only `NAMAO_ALLOW_ANY_LINK` flag on (needed to type a `localhost` link); the final production `flutter build apk --release` (no flags, 52.8 MB, plus per-ABI APKs from an earlier build) was built after one last fix (the notification-permission dialog no longer delays the first save) and was **not** itself run on a device or emulator. **Release signing was the debug-key fallback**; physical device, TalkBack and real-platform downloads were not tested. |
 | Before the upgrade | **no Python tests existed**; Android unit tests were not runnable (no SDK) |
 
 Not run: macOS/Linux desktop builds, iOS anything, Android native build/instrumented tests, GitHub Actions, any
 Facebook/TikTok/Instagram download (no rights-cleared assets).
+
+**Web verification limits.** The browser runs used a scripted engine (real API, store and worker; no network), not real
+YouTube downloads. There is no automated browser test in CI: `main.js` (the controller) is covered by the manual checks
+above and by an independent code review (whose findings on duplicate retries, two-tab history, desktop auto-save ordering,
+outage recovery and focus handling were fixed), not by unit tests.
 
 ## What the Python suite covers
 
