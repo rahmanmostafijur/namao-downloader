@@ -2,926 +2,225 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>নামাও — Namao</title>
-<meta
-  name="description"
-  content="Namao — paste a YouTube, Facebook, TikTok, X, or Instagram link and download it in the quality you want, straight from your browser."
-/>
-<meta name="theme-color" id="theme-color-meta" content="#52525b" />
-<meta property="og:title" content="নামাও — Namao" />
-<meta
-  property="og:description"
-  content="Paste a link. Pick a quality. Download."
-/>
-<meta property="og:type" content="website" />
-<link
-  rel="icon"
-  href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2352525b'/%3E%3Cpath d='M25 20l20 12-20 12z' fill='white'/%3E%3C/svg%3E"
-/>
-
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Namao — video downloader</title>
+<meta name="description" content="Namao downloads public YouTube, Facebook, TikTok, X and Instagram videos in the quality the source really offers." />
+<meta name="theme-color" id="theme-color-meta" content="#0B0C0F" />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23F5A524'/%3E%3Cpath d='M32 14v26M21 30l11 11 11-11M16 51h32' fill='none' stroke='%231A1203' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link
-  href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-  rel="stylesheet"
-/>
-
-<style>
-  :root {
-    /* Dark is the deliberate default look; --theme-toggle can switch to light. */
-    --accent: #52525b;
-    --accent-soft: #52525b33;
-    --bg: #0a0a0d;
-    --nav-bg: #000000;
-    --card: #131316;
-    --text: #f5f5f6;
-    --text-dim: #9a9aa2;
-    --border: #26262b;
-    --radius: 14px;
-  }
-
-  :root[data-theme="light"] {
-    --bg: #f7f7f8;
-    --nav-bg: #ffffff;
-    --card: #ffffff;
-    --text: #16181d;
-    --text-dim: #6b7280;
-    --border: #e5e7eb;
-  }
-
-  /* Platform tints — swapped in by JS via body[data-platform]. */
-  body[data-platform="youtube"] { --accent: #ff0033; --accent-soft: #ff003333; }
-  body[data-platform="facebook"] { --accent: #0866ff; --accent-soft: #0866ff33; }
-  body[data-platform="tiktok"] { --accent: #0eb8b8; --accent-soft: #0eb8b833; }
-  body[data-platform="twitter"] { --accent: #7c8591; --accent-soft: #7c859133; }
-  body[data-platform="instagram"] { --accent: #e1306c; --accent-soft: #e1306c33; }
-
-  * { box-sizing: border-box; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    transition: background 0.25s ease, color 0.25s ease;
-  }
-
-  a { color: inherit; }
-
-  /* ---------- Navbar ---------- */
-
-  .navbar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 14px 24px;
-    background: var(--nav-bg);
-    border-bottom: 1px solid var(--border);
-    transition: background 0.25s ease;
-  }
-
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-decoration: none;
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-weight: 700;
-    font-size: 17px;
-    color: var(--text);
-  }
-
-  .brand-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-    background: var(--accent);
-    transition: background 0.25s ease;
-  }
-
-  .brand-icon svg { width: 16px; height: 16px; }
-
-  .nav-links {
-    display: flex;
-    gap: 24px;
-    font-size: 14px;
-  }
-
-  .nav-links a {
-    text-decoration: none;
-    color: var(--text-dim);
-    transition: color 0.15s ease;
-  }
-
-  .nav-links a:hover { color: var(--text); }
-
-  .nav-actions { display: flex; gap: 8px; }
-
-  .icon-btn {
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text);
-    font-size: 15px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: border-color 0.15s ease;
-  }
-
-  .icon-btn:hover { border-color: var(--accent); }
-
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-
-  .modal {
-    width: 100%;
-    max-width: 480px;
-    max-height: 90vh;
-    overflow-y: auto;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-  }
-
-  .modal-title {
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-weight: 700;
-    font-size: 18px;
-    margin: 0 0 10px;
-  }
-
-  .modal-hint {
-    font-size: 12.5px;
-    color: var(--text-dim);
-    line-height: 1.6;
-    margin: 0 0 12px;
-  }
-
-  .modal-hint code {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 11.5px;
-  }
-
-  #cookies-textarea {
-    width: 100%;
-    resize: vertical;
-    background: var(--bg);
-    color: var(--text);
-    border: 1.5px solid var(--border);
-    border-radius: 8px;
-    padding: 10px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 11.5px;
-    line-height: 1.5;
-  }
-
-  .modal-actions {
-    margin-top: 14px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  /* ---------- Page shell ---------- */
-
-  main {
-    max-width: 680px;
-    margin: 0 auto;
-    padding: 48px 20px 32px;
-  }
-
-  header {
-    text-align: center;
-    margin-bottom: 32px;
-  }
-
-  .wordmark {
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-weight: 800;
-    font-size: 48px;
-    letter-spacing: -0.02em;
-    margin: 0;
-    color: var(--text);
-  }
-
-  .wordmark .dot {
-    color: var(--accent);
-    transition: color 0.25s ease;
-  }
-
-  .tagline {
-    margin: 8px 0 0;
-    color: var(--text-dim);
-    font-size: 15px;
-  }
-
-  .search-row {
-    display: flex;
-    gap: 10px;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px;
-    transition: border-color 0.25s ease, background 0.25s ease;
-  }
-
-  .search-row:focus-within {
-    border-color: var(--accent);
-  }
-
-  .url-field {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  #url {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 15px;
-    padding: 10px 8px;
-    color: var(--text);
-    font-family: inherit;
-  }
-
-  .platform-pill {
-    flex-shrink: 0;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--accent);
-    background: var(--accent-soft);
-    padding: 4px 9px;
-    border-radius: 999px;
-    display: none;
-    white-space: nowrap;
-  }
-
-  .platform-pill.show { display: inline-block; }
-
-  #paste-btn {
-    flex-shrink: 0;
-    border: 1.5px solid var(--border);
-    border-radius: calc(var(--radius) - 5px);
-    background: transparent;
-    color: var(--text);
-    font-weight: 600;
-    font-size: 14px;
-    padding: 0 16px;
-    cursor: pointer;
-    transition: border-color 0.15s ease;
-  }
-
-  #paste-btn:hover { border-color: var(--accent); }
-
-  #fetch-btn {
-    flex-shrink: 0;
-    border: none;
-    border-radius: calc(var(--radius) - 5px);
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    font-size: 15px;
-    padding: 0 22px;
-    cursor: pointer;
-    transition: background 0.25s ease, opacity 0.15s ease;
-  }
-
-  #fetch-btn:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  #fetch-btn:not(:disabled):hover {
-    filter: brightness(1.15);
-  }
-
-  .notice-list {
-    margin: 14px 0 0;
-    padding: 12px 16px 12px 32px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    line-height: 1.6;
-  }
-
-  .notice-list li { margin: 2px 0; }
-
-  .status {
-    margin-top: 18px;
-    text-align: center;
-    color: var(--text-dim);
-    font-size: 14px;
-  }
-
-  .spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    vertical-align: -2px;
-    margin-right: 8px;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .error-box {
-    margin-top: 18px;
-    background: #3d1414;
-    border: 1px solid #7f1d1d;
-    color: #fca5a5;
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  :root[data-theme="light"] .error-box {
-    background: #fef2f2;
-    border-color: #fecaca;
-    color: #991b1b;
-  }
-
-  .ffmpeg-banner {
-    margin-top: 18px;
-    background: #3d2f0a;
-    border: 1px solid #92730f;
-    color: #fde68a;
-    border-radius: 10px;
-    padding: 12px 16px;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  :root[data-theme="light"] .ffmpeg-banner {
-    background: #fffbeb;
-    border-color: #fde68a;
-    color: #92400e;
-  }
-
-  .result-card {
-    margin-top: 24px;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-
-  .video-meta {
-    display: flex;
-    gap: 14px;
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .thumb-wrap {
-    flex-shrink: 0;
-    width: 128px;
-    height: 72px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--bg);
-  }
-
-  .thumb-wrap img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .meta-text {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-  }
-
-  .video-title {
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    line-height: 1.35;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .video-sub {
-    font-size: 13px;
-    color: var(--text-dim);
-  }
-
-  .quality-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .quality-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .quality-row:last-child {
-    border-bottom: none;
-  }
-
-  .quality-label {
-    font-weight: 600;
-    font-size: 14px;
-    min-width: 52px;
-  }
-
-  .quality-note {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    background: var(--accent-soft);
-    padding: 2px 8px;
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-
-  .quality-size {
-    margin-left: auto;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    white-space: nowrap;
-  }
-
-  .dl-btn {
-    flex-shrink: 0;
-    text-decoration: none;
-    border: 1.5px solid var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 13px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-
-  .dl-btn:hover {
-    background: var(--accent);
-    color: #fff;
-  }
-
-  .skel {
-    background: linear-gradient(90deg, var(--border) 25%, var(--card) 37%, var(--border) 63%);
-    background-size: 400% 100%;
-    animation: shimmer 1.4s ease infinite;
-    border-radius: 6px;
-  }
-
-  .thumb-wrap.skel { border-radius: 8px; }
-
-  .skel-line {
-    height: 12px;
-    margin: 4px 0;
-  }
-
-  @keyframes shimmer {
-    0% { background-position: 100% 50%; }
-    100% { background-position: 0 50%; }
-  }
-
-  /* ---------- Content sections ---------- */
-
-  section.pitch {
-    margin-top: 64px;
-    scroll-margin-top: 80px;
-  }
-
-  .section-title {
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    text-align: center;
-    margin: 0 0 24px;
-  }
-
-  .two-col {
-    margin-top: 64px;
-    scroll-margin-top: 80px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 32px;
-  }
-
-  .two-col .section-title {
-    text-align: left;
-    font-size: 18px;
-  }
-
-  .about-col p {
-    font-size: 13.5px;
-    line-height: 1.65;
-    color: var(--text-dim);
-    margin: 0 0 12px;
-  }
-
-  .faq-item {
-    border: 1.5px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 8px;
-    background: var(--card);
-  }
-
-  .faq-item summary {
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 13.5px;
-    list-style: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .faq-item summary::-webkit-details-marker { display: none; }
-
-  .faq-item summary::after {
-    content: "+";
-    flex-shrink: 0;
-    font-weight: 400;
-    font-size: 16px;
-    color: var(--text-dim);
-  }
-
-  .faq-item[open] summary::after { content: "–"; }
-
-  .faq-item p {
-    margin: 10px 0 0;
-    color: var(--text-dim);
-    font-size: 13px;
-    line-height: 1.6;
-  }
-
-  .features {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-
-  .feature-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px;
-  }
-
-  .feature-icon {
-    font-size: 22px;
-    line-height: 1;
-    margin-bottom: 10px;
-  }
-
-  .feature-card h3 {
-    font-family: "Bricolage Grotesque", sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-    margin: 0 0 6px;
-  }
-
-  .feature-card p {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--text-dim);
-    margin: 0;
-  }
-
-  .steps {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .steps li {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 16px;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-  }
-
-  .steps li:first-child {
-    border-radius: var(--radius) var(--radius) 0 0;
-  }
-
-  .steps li:last-child {
-    border-radius: 0 0 var(--radius) var(--radius);
-  }
-
-  .steps li:not(:last-child) {
-    border-bottom: none;
-  }
-
-  .step-num {
-    flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .step-body strong {
-    display: block;
-    font-size: 14px;
-    margin-bottom: 2px;
-  }
-
-  .step-body p {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text-dim);
-    line-height: 1.5;
-  }
-
-  footer {
-    text-align: center;
-    margin-top: 40px;
-    color: var(--text-dim);
-    font-size: 12.5px;
-  }
-
-  @media (max-width: 640px) {
-    .two-col { grid-template-columns: 1fr; gap: 40px; }
-  }
-
-  @media (max-width: 480px) {
-    .nav-links { display: none; }
-    .features { grid-template-columns: 1fr; }
-    .wordmark { font-size: 38px; }
-    .search-row { flex-direction: column; }
-    #paste-btn, #fetch-btn { padding: 12px; }
-    .platform-pill { display: none !important; }
-    .quality-row { flex-wrap: wrap; }
-    .quality-size { margin-left: 0; order: 3; width: 100%; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
-  }
-
-  /* --- download job rows (progress / cancel / retry) --- */
-  .row-action { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
-  .quality-size + .row-action { margin-left: 12px; }
-  .job-progress { display: inline-flex; flex-direction: column; gap: 3px; min-width: 150px; }
-  .job-progress progress { width: 100%; height: 6px; accent-color: var(--accent); }
-  .job-label { font-size: 12.5px; color: var(--text-dim); max-width: 260px; }
-  .job-label.job-error { color: #f87171; }
-  :root[data-theme="light"] .job-label.job-error { color: #b91c1c; }
-  .job-detail { font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--text-dim); min-height: 1em; }
-  button.dl-btn { background: transparent; cursor: pointer; font-family: inherit; }
-  button.dl-btn:hover { background: var(--accent); color: #fff; }
-  button.dl-btn:disabled { opacity: 0.5; cursor: default; }
-  .dl-cancel { border-color: var(--border); color: var(--text-dim); }
-  @media (max-width: 640px) {
-    .row-action { width: 100%; margin-left: 0; justify-content: space-between; order: 4; }
-    .job-label { max-width: none; flex: 1; }
-  }
-</style>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<script src="theme-init.js"></script>
 </head>
-<body id="top" data-platform="">
-  <nav class="navbar">
-    <a href="#top" class="brand">
-      <span class="brand-icon">
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      Namao
-    </a>
-    <div class="nav-links">
-      <a href="#how-it-works">How it works</a>
-      <a href="#faq">FAQ</a>
-      <a href="#features">Features</a>
-    </div>
-    <div class="nav-actions">
-      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌙</button>
-    </div>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="#/" aria-label="Namao — home">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/></svg>
+    </span>
+    <span class="brand-name">namao<span class="brand-dot">.</span></span>
+  </a>
+  <nav class="nav" aria-label="Primary">
+    <a href="#/" data-route="home" data-icon="download"><span>Download</span></a>
+    <a href="#/downloads" data-route="downloads" data-icon="list"><span>Downloads</span><span id="nav-badge" class="nav-badge num" hidden></span></a>
+    <a href="#/settings" data-route="settings" data-icon="sliders"><span>Settings</span></a>
+    <a href="#/about" data-route="about" data-icon="info"><span>About</span></a>
   </nav>
+  <button id="theme-toggle" class="btn btn-icon btn-ghost theme-toggle" type="button" aria-label="Theme: system. Activate to change."></button>
+</header>
 
+<main id="main" tabindex="-1">
 
-  <main>
-    <header>
-      <h1 class="wordmark"><span lang="bn">নামাও</span><span class="dot">.</span></h1>
-      <p class="tagline">Paste a link. Pick a quality. Download.</p>
-    </header>
+  <!-- ============================== Download ============================== -->
+  <section id="view-home" class="view" data-view="home" aria-labelledby="home-title" hidden>
+    <div class="hero">
+      <h1 id="home-title" class="display" tabindex="-1">Paste a link.<br />Pick a quality.</h1>
+      <p class="lede">Download public videos from YouTube, Facebook, TikTok, X and Instagram, in a quality the source really offers.</p>
+    </div>
 
-    <div class="search-row">
-      <div class="url-field">
-        <input
-          id="url"
-          type="url"
-          inputmode="url"
-          autocomplete="off"
-          spellcheck="false"
-          aria-label="Video URL"
-          placeholder="Paste a YouTube, Facebook, TikTok, X, or Instagram link…"
-        />
-        <span id="platform-pill" class="platform-pill" aria-hidden="true"></span>
+    <form id="url-form" class="url-form" novalidate>
+      <label for="url" class="label">Video link</label>
+      <div class="field" id="url-field">
+        <span class="field-icon" id="url-icon" aria-hidden="true"></span>
+        <input id="url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="https://www.youtube.com/watch?v=…" aria-describedby="url-help url-error" />
+        <span id="platform-chip" class="chip chip-platform" hidden></span>
+        <button type="button" id="clear-btn" class="btn btn-icon btn-ghost" aria-label="Clear link" hidden></button>
       </div>
-      <button id="paste-btn" type="button" aria-label="Paste from clipboard">Paste</button>
-      <button id="fetch-btn" aria-label="Fetch video info">Fetch</button>
-    </div>
-    <ul class="notice-list">
-      <li>Works with public videos — private or age-restricted links may fail.</li>
-      <li>Personal-use tool. Only download videos you have the rights to use.</li>
-    </ul>
+      <p id="url-error" class="field-error" role="alert" hidden></p>
+      <p id="url-help" class="field-help">Public, single videos only. No playlists, channels or private links.</p>
+      <div class="form-actions">
+        <button type="button" id="paste-btn" class="btn btn-secondary btn-lg"></button>
+        <button type="submit" id="fetch-btn" class="btn btn-primary btn-lg">Get formats</button>
+      </div>
+    </form>
 
-    <div id="status" class="status" role="status" style="display:none"></div>
-    <div id="error" class="error-box" role="alert" style="display:none"></div>
-    <div id="ffmpeg-banner" class="ffmpeg-banner" role="status" style="display:none">
-      This server can't find FFmpeg, so merged video and MP3 downloads will
-      fail. The operator needs to install FFmpeg (see docs/deployment.md).
+    <div id="server-banner" class="banner banner-warn" role="status" hidden></div>
+
+    <div id="skeleton" class="card" aria-hidden="true" hidden>
+      <div class="video-head">
+        <div class="video-thumb skel"></div>
+        <div class="video-info"><div class="skel skel-line w-80"></div><div class="skel skel-line w-45"></div></div>
+      </div>
+      <div class="fmt-list"><div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div></div>
     </div>
 
-    <div id="skeleton" class="result-card" style="display:none" aria-hidden="true">
-      <div class="video-meta">
-        <div class="thumb-wrap skel"></div>
-        <div class="meta-text">
-          <div class="skel skel-line" style="width:80%"></div>
-          <div class="skel skel-line" style="width:45%"></div>
+    <section id="result" class="card result" aria-labelledby="result-title" hidden>
+      <div class="video-head">
+        <div class="video-thumb">
+          <img id="thumb" alt="" referrerpolicy="no-referrer" decoding="async" />
+          <span id="duration-badge" class="badge num"></span>
+        </div>
+        <div class="video-info">
+          <h2 id="result-title" class="video-title"></h2>
+          <p id="result-sub" class="video-sub"></p>
+          <div id="result-chips" class="chips"></div>
         </div>
       </div>
-      <div class="quality-list">
-        <div class="quality-row"><div class="skel skel-line" style="width:100%"></div></div>
-        <div class="quality-row"><div class="skel skel-line" style="width:100%"></div></div>
-        <div class="quality-row"><div class="skel skel-line" style="width:100%"></div></div>
-      </div>
-    </div>
-
-    <div id="result" class="result-card" style="display:none">
-      <div class="video-meta">
-        <div class="thumb-wrap">
-          <img id="thumb" src="" alt="" />
+      <form id="format-form" novalidate>
+        <fieldset class="formats">
+          <legend class="sr-only">Choose a quality</legend>
+          <div id="group-video" hidden><p class="group-label">Video</p><div id="fmt-video" class="fmt-list"></div></div>
+          <div id="group-audio" hidden><p class="group-label">Audio only</p><div id="fmt-audio" class="fmt-list"></div></div>
+        </fieldset>
+        <div class="action-bar">
+          <div class="action-summary"><span id="selected-label" class="selected-label"></span><span id="selected-size" class="selected-size num"></span></div>
+          <button type="submit" id="download-btn" class="btn btn-primary btn-lg"></button>
         </div>
-        <div class="meta-text">
-          <div id="title" class="video-title"></div>
-          <div id="sub" class="video-sub"></div>
-        </div>
-      </div>
-      <div id="qualities" class="quality-list"></div>
-    </div>
-
-    <section id="faq" class="two-col">
-      <div class="about-col">
-        <h2 class="section-title">About Namao</h2>
-        <p>
-          Namao is a personal-use downloader for YouTube, Facebook, TikTok,
-          X (Twitter), and Instagram. Paste a link, and it reads every
-          quality the video was actually uploaded in — from its original
-          resolution down to whatever the source offers — plus an audio-only MP3 option.
-        </p>
-        <p>
-          Downloads run on the server you host it on, through
-          <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a>
-          and FFmpeg. No account, no ads, no paid third-party API.
-        </p>
-      </div>
-      <div class="faq-col">
-        <h2 class="section-title">Frequently Asked Questions</h2>
-        <details class="faq-item">
-          <summary>Where do downloads get saved?</summary>
-          <p>Wherever your browser saves downloads by default. When a job finishes, Namao offers the verified file as a normal browser download.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Can I download audio only?</summary>
-          <p>Yes — pick the "Audio only" row in the quality list. It is converted to MP3 on the server.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Why do some videos take a while?</summary>
-          <p>Higher resolutions are downloaded as separate video and audio streams and merged by FFmpeg, then checked before they are offered to you. The progress bar shows the real state of the job and you can cancel it at any time.</p>
-        </details>
-        <details class="faq-item">
-          <summary>Does it store my videos anywhere?</summary>
-          <p>Only temporarily. Each job gets its own folder, which is deleted when it is cancelled, when it fails, and automatically after the retention period (one hour by default).</p>
-        </details>
-        <details class="faq-item">
-          <summary>Which platforms are supported?</summary>
-          <p>YouTube, Facebook, TikTok, X/Twitter, and Instagram. Anything else is rejected with a clear message.</p>
-        </details>
-      </div>
+      </form>
     </section>
 
-    <section id="features" class="pitch">
-      <h2 class="section-title">Namao Features</h2>
-      <div class="features">
-        <div class="feature-card">
-          <div class="feature-icon">🌐</div>
-          <h3>All major platforms</h3>
-          <p>YouTube, Facebook, TikTok, X, and Instagram — one box, no juggling apps.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🎚️</div>
-          <h3>Pick your quality</h3>
-          <p>Every resolution the video actually offers, or MP3 audio only. A resolution that isn't available is never silently swapped for another.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🔒</div>
-          <h3>Self-hosted</h3>
-          <p>No accounts, no ads, no paid downloading API. You run the server.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🧹</div>
-          <h3>Nothing left behind</h3>
-          <p>Each download uses its own temp folder, removed on cancel, failure, or after the retention period.</p>
-        </div>
+    <section id="home-active" class="block" aria-labelledby="home-active-title" hidden>
+      <div class="block-head">
+        <h2 id="home-active-title" class="block-title">In progress</h2>
+        <a class="link" href="#/downloads">View all</a>
       </div>
+      <ul id="home-active-list" class="dl-list"></ul>
     </section>
+  </section>
 
-    <section id="how-it-works" class="pitch">
-      <h2 class="section-title">How it works</h2>
-      <ol class="steps">
-        <li>
-          <span class="step-num">1</span>
-          <div class="step-body">
-            <strong>Paste a link</strong>
-            <p>Copy a video URL from YouTube, Facebook, TikTok, X, or Instagram and drop it in the box above.</p>
-          </div>
-        </li>
-        <li>
-          <span class="step-num">2</span>
-          <div class="step-body">
-            <strong>Hit Fetch</strong>
-            <p>Namao reads the video's title, thumbnail, and every quality it was actually uploaded in.</p>
-          </div>
-        </li>
-        <li>
-          <span class="step-num">3</span>
-          <div class="step-body">
-            <strong>Pick a quality</strong>
-            <p>Compare estimated file sizes and choose a resolution, or grab audio only.</p>
-          </div>
-        </li>
-        <li>
-          <span class="step-num">4</span>
-          <div class="step-body">
-            <strong>Download</strong>
-            <p>Watch real progress, cancel if you like, and save the finished file with your browser.</p>
-          </div>
-        </li>
-      </ol>
-    </section>
+  <!-- ============================== Downloads ============================== -->
+  <section id="view-downloads" class="view" data-view="downloads" aria-labelledby="downloads-title" hidden>
+    <div class="page-head">
+      <div>
+        <h1 id="downloads-title" class="page-title" tabindex="-1">Downloads</h1>
+        <p class="lede">Jobs you started in this browser. Finished files stay on the server for a limited time, so save them promptly.</p>
+      </div>
+      <button type="button" id="clear-finished" class="btn btn-secondary" hidden>Clear this list</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Download status">
+      <button type="button" role="tab" id="tab-active" data-tab="active" aria-selected="true" aria-controls="downloads-panel">Active <span class="tab-count num" data-count="active">0</span></button>
+      <button type="button" role="tab" id="tab-completed" data-tab="completed" aria-selected="false" aria-controls="downloads-panel" tabindex="-1">Completed <span class="tab-count num" data-count="completed">0</span></button>
+      <button type="button" role="tab" id="tab-failed" data-tab="failed" aria-selected="false" aria-controls="downloads-panel" tabindex="-1">Failed <span class="tab-count num" data-count="failed">0</span></button>
+    </div>
+    <div id="downloads-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-active">
+      <ul id="dl-list" class="dl-list"></ul>
+      <div id="dl-empty"></div>
+    </div>
+  </section>
 
-    <footer>Personal-use tool. Respect creators and platform terms.</footer>
-  </main>
+  <!-- ============================== Settings ============================== -->
+  <section id="view-settings" class="view" data-view="settings" aria-labelledby="settings-title" hidden>
+    <div class="page-head"><div><h1 id="settings-title" class="page-title" tabindex="-1">Settings</h1><p class="lede">Preferences are stored in this browser only.</p></div></div>
+
+    <div class="card setting">
+      <fieldset class="segmented-set">
+        <legend class="setting-title">Appearance</legend>
+        <p class="setting-help">System follows your device’s light or dark setting.</p>
+        <div class="segmented" id="theme-options">
+          <label><input type="radio" name="theme" value="system" /><span id="theme-opt-system"></span></label>
+          <label><input type="radio" name="theme" value="light" /><span id="theme-opt-light"></span></label>
+          <label><input type="radio" name="theme" value="dark" /><span id="theme-opt-dark"></span></label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="card setting" id="desktop-card" hidden>
+      <h2 class="setting-title">Save location (desktop app)</h2>
+      <p class="setting-help">Finished downloads can be copied into a folder inside your home folder. Existing files are never overwritten.</p>
+      <label class="label" for="desktop-folder">Folder</label>
+      <div class="inline-form">
+        <input id="desktop-folder" class="input" type="text" autocomplete="off" spellcheck="false" />
+        <button type="button" id="desktop-save-folder" class="btn btn-secondary">Save folder</button>
+        <button type="button" id="desktop-open-folder" class="btn btn-ghost">Open</button>
+      </div>
+      <label class="check"><input type="checkbox" id="desktop-autosave" /><span>Save to this folder automatically when a download finishes</span></label>
+      <p id="desktop-message" class="field-error" role="alert" hidden></p>
+    </div>
+
+    <div class="card setting">
+      <h2 class="setting-title">Server</h2>
+      <p class="setting-help">If the server requires an access key, enter it here. It is sent as a request header and kept only in this browser.</p>
+      <label class="label" for="api-key">Access key</label>
+      <form class="inline-form" id="api-key-form">
+        <input id="api-key" class="input" type="password" autocomplete="new-password" spellcheck="false" placeholder="Not set" />
+        <button type="submit" id="api-key-save" class="btn btn-secondary">Save</button>
+        <button type="button" id="api-key-clear" class="btn btn-ghost">Remove</button>
+      </form>
+      <div class="setting-row">
+        <button type="button" id="check-server" class="btn btn-secondary">Check server</button>
+        <span id="server-summary" class="server-summary" role="status"></span>
+      </div>
+      <ul id="server-checks" class="checks" hidden></ul>
+    </div>
+
+    <div class="card setting">
+      <h2 class="setting-title">History</h2>
+      <p class="setting-help" id="history-help"></p>
+      <button type="button" id="clear-history" class="btn btn-danger-outline">Clear history</button>
+    </div>
+  </section>
+
+  <!-- ============================== About ============================== -->
+  <section id="view-about" class="view" data-view="about" aria-labelledby="about-title" hidden>
+    <div class="page-head"><div><h1 id="about-title" class="page-title" tabindex="-1">About Namao</h1>
+      <p class="lede">A self-hosted downloader for personal use. No accounts, no ads, no paid downloading API.</p></div></div>
+
+    <div class="card prose">
+      <p>Paste a link and Namao reads every quality the video was actually uploaded in, plus an audio-only MP3 option. Downloads run on the server you host it on, through
+        <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a> and FFmpeg. A file is only offered after it has been checked, and it is never reported as finished while it is still being merged.</p>
+    </div>
+
+    <h2 class="block-title spaced">How it works</h2>
+    <ol class="steps">
+      <li><span class="step-num num">1</span><div><strong>Paste a link</strong><p>Copy a video URL from a supported platform and paste it above.</p></div></li>
+      <li><span class="step-num num">2</span><div><strong>Get formats</strong><p>Namao reads the title, thumbnail and the qualities the source really offers.</p></div></li>
+      <li><span class="step-num num">3</span><div><strong>Pick a quality</strong><p>Compare estimated sizes and choose a resolution, or audio only.</p></div></li>
+      <li><span class="step-num num">4</span><div><strong>Download</strong><p>Watch real progress, cancel any time, then save the verified file.</p></div></li>
+    </ol>
+
+    <h2 class="block-title spaced">Questions</h2>
+    <div class="faq">
+      <details><summary>Where do downloads get saved?</summary><p>Wherever your browser saves downloads. When a job finishes, Namao offers the verified file as a normal browser download. The desktop app can also copy it into a folder you choose.</p></details>
+      <details><summary>Can I download audio only?</summary><p>Yes. Pick the audio row in the quality list. It is converted to MP3 on the server.</p></details>
+      <details><summary>Why do some videos take a while?</summary><p>Higher resolutions are downloaded as separate video and audio streams and merged by FFmpeg, then checked before they are offered to you. The progress bar shows the real state of the job.</p></details>
+      <details><summary>Does it store my videos?</summary><p>Only temporarily. Each job gets its own folder, which is deleted when it is cancelled, when it fails, and automatically after the retention period (one hour by default).</p></details>
+      <details><summary>Why is a quality missing?</summary><p>Namao only lists what the source offers for that video. A resolution that is not available is never silently swapped for another.</p></details>
+    </div>
+
+    <h2 class="block-title spaced">Good to know</h2>
+    <div class="card prose">
+      <ul>
+        <li>Single, public, non-live videos only. Namao does not bypass DRM, logins, paywalls or age gates.</li>
+        <li>Platforms sometimes throttle or block a server’s address. When that happens Namao says so instead of failing silently.</li>
+        <li>Only download videos you have the right to save, and respect each platform’s terms.</li>
+      </ul>
+      <p class="setting-help" id="about-version"></p>
+    </div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+<div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
 
 <script src="app.js"></script>
+<script src="history.js"></script>
+<script src="dom.js"></script>
+<script src="components.js"></script>
+<script src="main.js"></script>
 </body>
 </html>

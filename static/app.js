@@ -108,9 +108,17 @@
     if (status === "failed" || status === "interrupted" || status === "cancelled") {
       if (job.error && job.error.message) label = job.error.message;
     }
+    var failedLike = status === "failed" || status === "interrupted" || status === "cancelled";
+    var done = formatBytes(progress.downloaded_bytes);
+    var total = formatBytes(progress.total_bytes);
     return {
       status: status,
       label: label,
+      // headline is the status word alone; message is the server's explanation, shown separately.
+      headline: failedLike ? STATUS_LABELS[status] : label,
+      message: failedLike && job.error && job.error.message ? job.error.message : "",
+      tone: status === "completed" ? "success" : failedLike ? "danger" : "active",
+      sizeText: status === "downloading" && done && total ? done + " of " + total : "",
       detail: detail.join(" · "),
       percent: percent,
       indeterminate: ["queued", "validating", "fetching_metadata", "merging", "verifying"].indexOf(status) !== -1,
@@ -119,6 +127,25 @@
       canRetry: status === "failed" || status === "cancelled" || status === "interrupted",
       retryable: !(job.error && job.error.retryable === false) || status !== "failed",
     };
+  }
+
+  var PLATFORM_LABELS = { youtube: "YouTube", facebook: "Facebook", tiktok: "TikTok", twitter: "X", instagram: "Instagram" };
+
+  /** "just now", "5 min ago", "3 h ago", "2 d ago". `now` is injectable for tests. */
+  function formatAgo(timestampMs, now) {
+    if (!isFinite(timestampMs)) return "";
+    var seconds = Math.max(0, Math.round(((now === undefined ? Date.now() : now) - timestampMs) / 1000));
+    if (seconds < 45) return "just now";
+    if (seconds < 3600) return Math.max(1, Math.round(seconds / 60)) + " min ago";
+    if (seconds < 86400) return Math.round(seconds / 3600) + " h ago";
+    return Math.round(seconds / 86400) + " d ago";
+  }
+
+  /** Size label for a format option: "~210 MB" (estimate), "210 MB" (exact) or "size unknown". */
+  function sizeLabel(option) {
+    var pretty = formatBytes(option && option.size_bytes);
+    if (!pretty) return "size unknown";
+    return (option.size_estimated ? "~" : "") + pretty;
   }
 
   function messageFromError(body, fallback) {
@@ -190,6 +217,19 @@
       desktopOpenFolder: function () {
         return request("POST", "/api/v1/desktop/open-folder", undefined, DESKTOP_HEADER);
       },
+      /** Readiness report. Resolves with {httpStatus, body} for 200 *and* 503 (degraded is still informative). */
+      health: function () {
+        return fetchImpl(base + "/health/ready", { method: "GET", headers: headers() }).then(function (res) {
+          return res
+            .json()
+            .catch(function () {
+              return null;
+            })
+            .then(function (body) {
+              return { httpStatus: res.status, body: body };
+            });
+        });
+      },
       fileUrl: function (id) {
         return base + prefix + "/" + encodeURIComponent(id) + "/file";
       },
@@ -228,7 +268,7 @@
               failures++;
               // Not-found / auth errors are final; network blips are retried a few times.
               if (err.status === 404 || err.status === 401 || failures > 5) {
-                onUpdate({ status: "failed", progress: {}, error: { code: "client_error", message: err.message, retryable: true } });
+                onUpdate({ status: "failed", progress: {}, error: { code: "client_error", message: err.message, retryable: true, http_status: err.status || 0 } });
                 return;
               }
               timer = setTimeoutImpl(poll, pollMs * (failures + 1));
@@ -272,366 +312,6 @@
     return api;
   }
 
-  /* ----------------------------------------------------------------------
-   * DOM wiring (browser only)
-   * -------------------------------------------------------------------- */
-  function init(doc) {
-    var $ = function (id) {
-      return doc.getElementById(id);
-    };
-    var urlInput = $("url");
-    if (!urlInput) return;
-
-    var storedKey = null;
-    try {
-      storedKey = localStorage.getItem("namao-api-key");
-    } catch (e) {
-      /* storage blocked: fine */
-    }
-    var api = createApi(function (u, o) {
-      return fetch(u, o);
-    }, { apiKey: storedKey });
-
-    var els = {
-      pill: $("platform-pill"), paste: $("paste-btn"), fetch: $("fetch-btn"), status: $("status"),
-      error: $("error"), banner: $("ffmpeg-banner"), result: $("result"), skeleton: $("skeleton"),
-      thumb: $("thumb"), title: $("title"), sub: $("sub"), qualities: $("qualities"),
-      themeMeta: $("theme-color-meta"), themeToggle: $("theme-toggle"),
-    };
-    var PLATFORM_LABELS = { youtube: "YouTube", facebook: "Facebook", tiktok: "TikTok", twitter: "X", instagram: "Instagram" };
-    var PLATFORM_COLORS = { youtube: "#ff0033", facebook: "#0866ff", tiktok: "#0eb8b8", twitter: "#7c8591", instagram: "#e1306c" };
-    var NEUTRAL = "#52525b";
-    var watchers = [];
-    var desktop = null; // {output_dir, auto_save} when running inside the desktop app
-
-    function setupDesktop() {
-      api
-        .desktopPrefs()
-        .then(function (prefs) {
-          desktop = prefs;
-          var actions = doc.querySelector(".nav-actions");
-          if (!actions) return;
-          var folderBtn = doc.createElement("button");
-          folderBtn.type = "button";
-          folderBtn.className = "icon-btn";
-          folderBtn.textContent = "📁";
-          folderBtn.setAttribute("aria-label", "Choose download folder");
-          function refreshTitle() {
-            folderBtn.title = "Downloads are saved to: " + desktop.output_dir;
-          }
-          refreshTitle();
-          folderBtn.addEventListener("click", function () {
-            var chosen = doc.defaultView.prompt("Save finished downloads to this folder (inside your home folder):", desktop.output_dir);
-            if (!chosen || chosen === desktop.output_dir) return;
-            api
-              .desktopSetPrefs(chosen, desktop.auto_save)
-              .then(function (updated) {
-                desktop = updated;
-                refreshTitle();
-                showError("");
-              })
-              .catch(function (err) {
-                showError(err.message);
-              });
-          });
-          actions.insertBefore(folderBtn, actions.firstChild);
-        })
-        .catch(function () {
-          /* not the desktop app: nothing to set up */
-        });
-    }
-
-    function applyPlatformTint() {
-      var platform = detectPlatform(urlInput.value);
-      doc.body.setAttribute("data-platform", platform || "");
-      els.pill.textContent = platform ? PLATFORM_LABELS[platform] : "";
-      els.pill.classList.toggle("show", !!platform);
-      els.themeMeta.setAttribute("content", platform ? PLATFORM_COLORS[platform] : NEUTRAL);
-    }
-    urlInput.addEventListener("input", applyPlatformTint);
-
-    // theme
-    var THEME_KEY = "namao-theme";
-    function applyTheme(theme) {
-      if (theme === "light") {
-        doc.documentElement.setAttribute("data-theme", "light");
-        els.themeToggle.textContent = "☀️";
-      } else {
-        doc.documentElement.removeAttribute("data-theme");
-        els.themeToggle.textContent = "🌙";
-      }
-    }
-    var savedTheme = null;
-    try {
-      savedTheme = localStorage.getItem(THEME_KEY);
-    } catch (e) {
-      /* ignore */
-    }
-    applyTheme(savedTheme === "light" ? "light" : "dark");
-    els.themeToggle.addEventListener("click", function () {
-      var next = doc.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-      try {
-        localStorage.setItem(THEME_KEY, next);
-      } catch (e) {
-        /* ignore */
-      }
-      applyTheme(next);
-    });
-
-    els.paste.addEventListener("click", function () {
-      navigator.clipboard
-        .readText()
-        .then(function (text) {
-          if (text) {
-            urlInput.value = text.trim();
-            applyPlatformTint();
-            urlInput.focus();
-          }
-        })
-        .catch(function () {
-          showError("Couldn't read the clipboard automatically — paste with Ctrl+V instead.");
-        });
-    });
-
-    function setStatus(text) {
-      els.status.style.display = text ? "block" : "none";
-      els.status.textContent = "";
-      if (text) {
-        var spinner = doc.createElement("span");
-        spinner.className = "spinner";
-        els.status.appendChild(spinner);
-        els.status.appendChild(doc.createTextNode(text));
-      }
-    }
-    function showError(text) {
-      els.error.style.display = text ? "block" : "none";
-      els.error.textContent = text || "";
-    }
-
-    function stopWatchers() {
-      watchers.forEach(function (stop) {
-        stop();
-      });
-      watchers = [];
-    }
-
-    /* ---- one quality row, driven entirely by server job state ---- */
-    function renderRow(option, sourceUrl) {
-      var row = doc.createElement("div");
-      row.className = "quality-row";
-
-      var label = doc.createElement("span");
-      label.className = "quality-label";
-      label.textContent = option.label;
-      row.appendChild(label);
-
-      if (option.note) {
-        var note = doc.createElement("span");
-        note.className = "quality-note";
-        note.textContent = option.note;
-        row.appendChild(note);
-      }
-
-      var size = doc.createElement("span");
-      size.className = "quality-size";
-      var pretty = formatBytes(option.size_bytes);
-      size.textContent = pretty ? "~" + pretty : "size unknown";
-      row.appendChild(size);
-
-      var action = doc.createElement("span");
-      action.className = "row-action";
-      row.appendChild(action);
-      showStart(action, option, sourceUrl);
-      return row;
-    }
-
-    function button(text, className, onClick) {
-      var b = doc.createElement("button");
-      b.type = "button";
-      b.className = className;
-      b.textContent = text;
-      b.addEventListener("click", onClick);
-      return b;
-    }
-
-    function showStart(action, option, sourceUrl) {
-      action.textContent = "";
-      action.appendChild(button("Download", "dl-btn", function () {
-        startJob(action, option, sourceUrl);
-      }));
-    }
-
-    function startJob(action, option, sourceUrl) {
-      action.textContent = "";
-      var starting = doc.createElement("span");
-      starting.className = "job-label";
-      starting.textContent = "Starting…";
-      action.appendChild(starting);
-      var key = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
-      api
-        .create(sourceUrl, option.id, key)
-        .then(function (job) {
-          watchJob(action, option, sourceUrl, job);
-        })
-        .catch(function (err) {
-          showFailure(action, option, sourceUrl, err.message, true);
-        });
-    }
-
-    function saveToFolder(action, jobId) {
-      var status = doc.createElement("span");
-      status.className = "job-detail";
-      status.textContent = "Saving to your folder…";
-      action.insertBefore(status, action.firstChild);
-      api
-        .desktopSave(jobId)
-        .then(function (saved) {
-          status.textContent = "Saved as " + saved.name;
-          action.appendChild(button("Open folder", "dl-btn", function () {
-            api.desktopOpenFolder().catch(function (err) {
-              showError(err.message);
-            });
-          }));
-        })
-        .catch(function (err) {
-          status.textContent = "";
-          showError(err.message);
-        });
-    }
-
-    function showFailure(action, option, sourceUrl, message, canRetry) {
-      action.textContent = "";
-      var text = doc.createElement("span");
-      text.className = "job-label job-error";
-      text.textContent = message;
-      action.appendChild(text);
-      if (canRetry) {
-        action.appendChild(button("Retry", "dl-btn", function () {
-          startJob(action, option, sourceUrl);
-        }));
-      }
-    }
-
-    function watchJob(action, option, sourceUrl, initial) {
-      var jobId = initial.id;
-      var bar, labelEl, detailEl, cancelBtn;
-
-      function buildProgress() {
-        action.textContent = "";
-        var wrap = doc.createElement("span");
-        wrap.className = "job-progress";
-        labelEl = doc.createElement("span");
-        labelEl.className = "job-label";
-        bar = doc.createElement("progress");
-        bar.max = 100;
-        detailEl = doc.createElement("span");
-        detailEl.className = "job-detail";
-        cancelBtn = button("Cancel", "dl-btn dl-cancel", function () {
-          cancelBtn.disabled = true;
-          api.cancel(jobId).catch(function (err) {
-            showError(err.message);
-            cancelBtn.disabled = false;
-          });
-        });
-        wrap.appendChild(labelEl);
-        wrap.appendChild(bar);
-        wrap.appendChild(detailEl);
-        action.appendChild(wrap);
-        action.appendChild(cancelBtn);
-      }
-
-      function render(job) {
-        var view = describeJob(job);
-        if (view.status === "completed" && job.result) {
-          action.textContent = "";
-          var info = doc.createElement("span");
-          info.className = "job-label";
-          info.textContent = job.result.height ? job.result.height + "p · " + formatBytes(job.result.size_bytes) : formatBytes(job.result.size_bytes);
-          action.appendChild(info);
-          var link = doc.createElement("a");
-          link.className = "dl-btn";
-          link.textContent = "Save file";
-          link.href = api.fileUrl(jobId);
-          link.setAttribute("download", job.result.filename || "video");
-          action.appendChild(link);
-          if (desktop && desktop.auto_save) {
-            saveToFolder(action, jobId);
-          } else {
-            link.click(); // the server only ever offers a file after FFprobe verification
-          }
-          return;
-        }
-        if (view.terminal) {
-          var allowRetry = view.canRetry && (job.error ? job.error.retryable !== false : true);
-          showFailure(action, option, sourceUrl, view.label, allowRetry || view.status === "cancelled");
-          return;
-        }
-        if (!bar) buildProgress();
-        labelEl.textContent = view.label;
-        detailEl.textContent = view.detail;
-        if (view.indeterminate) bar.removeAttribute("value");
-        else bar.value = view.percent;
-      }
-
-      render(initial);
-      watchers.push(api.watch(jobId, render));
-    }
-
-    function renderResult(data, sourceUrl) {
-      els.result.style.display = "block";
-      els.banner.style.display = data.ffmpeg ? "none" : "block";
-      els.thumb.removeAttribute("src");
-      if (typeof data.thumbnail === "string" && /^https:\/\//i.test(data.thumbnail)) els.thumb.src = data.thumbnail;
-      els.title.textContent = data.title;
-      els.sub.textContent = [data.uploader, formatDuration(data.duration_seconds)].filter(Boolean).join(" · ");
-      els.qualities.textContent = "";
-      data.formats.forEach(function (option) {
-        els.qualities.appendChild(renderRow(option, sourceUrl));
-      });
-    }
-
-    function fetchInfo() {
-      var url = urlInput.value.trim();
-      showError("");
-      stopWatchers();
-      els.result.style.display = "none";
-      if (!url) return showError("Paste a video link first.");
-      if (!detectPlatform(url)) {
-        return showError("That link doesn't look like YouTube, Facebook, TikTok, X/Twitter, or Instagram.");
-      }
-      els.fetch.disabled = true;
-      urlInput.disabled = true;
-      setStatus("Reading video info…");
-      els.skeleton.style.display = "block";
-      api
-        .metadata(url)
-        .then(function (data) {
-          renderResult(data, url);
-        })
-        .catch(function (err) {
-          showError(err.status ? err.message : "Couldn't reach the server. Is it still running?");
-        })
-        .then(function () {
-          setStatus("");
-          els.skeleton.style.display = "none";
-          els.fetch.disabled = false;
-          urlInput.disabled = false;
-        });
-    }
-
-    els.fetch.addEventListener("click", fetchInfo);
-    urlInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") fetchInfo();
-    });
-    applyPlatformTint();
-    setupDesktop();
-  }
-
-  if (typeof document !== "undefined") {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { init(document); });
-    else init(document);
-  }
-
   return {
     detectPlatform: detectPlatform,
     formatBytes: formatBytes,
@@ -639,6 +319,9 @@
     formatEta: formatEta,
     describeJob: describeJob,
     createApi: createApi,
+    formatAgo: formatAgo,
+    sizeLabel: sizeLabel,
+    PLATFORM_LABELS: PLATFORM_LABELS,
     TERMINAL: TERMINAL,
   };
 });

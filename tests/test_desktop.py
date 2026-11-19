@@ -73,6 +73,10 @@ def test_dns_rebinding_requests_are_rejected_for_the_whole_api(env):
     assert env.client.get("/health/live").status_code == 200
 
 
+def test_liveness_advertises_desktop_mode(env):
+    assert env.client.get("/health/live").json()["desktop"] is True
+
+
 def test_desktop_endpoints_need_the_custom_header_that_forces_a_cors_preflight(env):
     assert env.client.get(f"{BASE}/preferences").status_code == 401
     assert env.client.post(f"{BASE}/open-folder").status_code == 401

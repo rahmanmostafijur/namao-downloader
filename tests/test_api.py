@@ -56,6 +56,12 @@ def test_liveness_is_always_ok(env):
     assert env.client.get("/health/live").json()["status"] == "ok"
 
 
+def test_liveness_says_this_is_not_the_desktop_app(env):
+    # The web client uses this to decide whether to look for desktop-only endpoints,
+    # instead of probing them and logging a 404 in the browser console on every page load.
+    assert env.client.get("/health/live").json()["desktop"] is False
+
+
 def test_readiness_requires_a_worker_and_healthy_dependencies(env):
     degraded = env.client.get("/health/ready")
     assert degraded.status_code == 503 and degraded.json()["checks"]["worker"]["ok"] is False

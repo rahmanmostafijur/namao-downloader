@@ -488,7 +488,7 @@ def create_app(
     # ---------------------------------------------------------------- health
     @app.get("/health/live", tags=["health"])
     def live() -> dict:
-        return {"status": "ok", "version": __version__}
+        return {"status": "ok", "version": __version__, "desktop": settings.desktop_mode}
 
     @app.get("/health/ready", tags=["health"])
     def ready() -> JSONResponse:
