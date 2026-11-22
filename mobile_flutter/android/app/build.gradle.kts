@@ -40,12 +40,25 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // A universal APK carries the engine for every ABI; leave out 32-bit x86 (those phones are
-        // gone; x86_64 is the emulator). Per-ABI builds (--split-per-abi) pick their own ABI, and
-        // Gradle refuses a filter alongside splits.
+        // The Flutter Gradle plugin has already set abiFilters to its default platforms by now, and
+        // it does not narrow them for --target-platform (the engine's libraries for every ABI would
+        // stay in the APK). So, with --target-platform (used by the release workflow: arm64 only,
+        // ~62 MB) replace the filter with exactly those ABIs. A universal build leaves out 32-bit x86
+        // (those phones are gone; x86_64 is the emulator). Per-ABI builds (--split-per-abi) pick
+        // their own ABI, and Gradle refuses a filter alongside splits.
         if (!project.hasProperty("split-per-abi")) {
+            val flutterToAbi = mapOf(
+                "android-arm" to "armeabi-v7a",
+                "android-arm64" to "arm64-v8a",
+                "android-x64" to "x86_64",
+            )
+            val requested = (project.findProperty("target-platform") as String?)
+                ?.split(",")
+                ?.mapNotNull { flutterToAbi[it.trim()] }
+                .orEmpty()
             ndk {
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+                abiFilters.clear()
+                abiFilters += requested.ifEmpty { listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
             }
         }
     }

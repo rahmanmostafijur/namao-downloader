@@ -93,3 +93,9 @@ and rollback procedure, and 362 + 16 + 17 automated tests (Python + web + mobile
 * Facebook, TikTok and Instagram extraction is enabled but was not exercised with real downloads (no rights-cleared test
   assets; these platforms often require login).
 * Personal, authorized use. Check each platform's terms before offering this to other people.
+
+## License
+
+Namao is licensed under the [GNU General Public License v3.0](LICENSE). The Android app bundles
+[youtubedl-android](https://github.com/yausername/youtubedl-android) (GPL-3.0), yt-dlp and FFmpeg; the notices are in
+the app under **Settings > Open-source licenses** and in [docs/android-engine.md](docs/android-engine.md).

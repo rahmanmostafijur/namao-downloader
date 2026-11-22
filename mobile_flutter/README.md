@@ -43,8 +43,9 @@ supported sites.
 ## Build a release APK and sign it
 
 ```bash
-flutter build apk --release --split-per-abi   # one APK per ABI (recommended)
-flutter build apk --release                   # universal APK (about 160 MB: the engine is bundled per ABI)
+flutter build apk --release --target-platform android-arm64   # what the release workflow publishes (about 62 MB)
+flutter build apk --release --split-per-abi   # one APK per ABI
+flutter build apk --release                   # universal APK (about 155 MB: the engine is bundled per ABI)
 ```
 
 Phones today are `arm64-v8a`; `armeabi-v7a` is for old 32-bit phones; `x86_64` is the emulator.

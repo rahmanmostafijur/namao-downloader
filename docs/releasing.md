@@ -42,7 +42,7 @@ users must uninstall and reinstall, and you cannot ever publish an in-place upda
 - Local signed build (to verify before tagging):
   ```bash
   export NAMAO_KEYSTORE_PATH=... NAMAO_KEYSTORE_PASSWORD=... NAMAO_KEY_ALIAS=namao NAMAO_KEY_PASSWORD=...
-  cd mobile_flutter && flutter build apk --release
+  cd mobile_flutter && flutter build apk --release --target-platform android-arm64   # same as the workflow (arm64-v8a, ~62 MB)
   java -jar "$ANDROID_HOME/build-tools/<version>/lib/apksigner.jar" verify --print-certs build/app/outputs/flutter-apk/app-release.apk
   ```
   Without those variables (or `android/key.properties`) Gradle signs with the **debug** key. That is only for local testing and must never be published.

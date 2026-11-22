@@ -60,5 +60,7 @@ nightly builds if sites break faster than stable releases land.
   can crash FFmpeg's first use there. Check it before targeting Android 15+ devices with 16 KB pages.
 - Swiping the app away stops a running download (it shows as Interrupted, with Retry).
 - Only YouTube was exercised on a device. Other sites use the same engine but are untested.
-- Size: per-ABI APKs are about 55 MB (armeabi-v7a), 62 MB (arm64-v8a) and 65 MB (x86_64); the universal APK is
-  about 160 MB. The release workflow currently builds a universal APK; consider publishing the arm64-v8a build.
+- Size: per-ABI APKs are about 55 MB (armeabi-v7a), 62 MB (arm64-v8a) and 65 MB (x86_64); a universal APK is
+  about 155 MB. The release workflow builds and publishes the arm64-v8a APK only
+  (`flutter build apk --release --target-platform android-arm64`), so it will not install on 32-bit-only phones
+  or x86 emulators; build those yourself from source if you need them.

@@ -111,8 +111,10 @@ jobs:
             echo "NAMAO_KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build release APK
-        run: flutter build apk --release
+      # arm64-v8a only: every Android phone sold in the last several years is 64-bit, and the engine is
+      # about 45 MB per ABI, so this is ~62 MB instead of the ~155 MB universal APK.
+      - name: Build release APK (arm64-v8a)
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Verify the signature
         env:
