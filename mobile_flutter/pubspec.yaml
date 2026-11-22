@@ -3,7 +3,7 @@ description: "Namao (নামাও) - download videos straight to your Android
 publish_to: 'none'
 
 # Keep in sync with the user-visible version. The native side reports versionName from this value.
-version: 1.1.0+3
+version: 1.1.1+4
 
 environment:
   sdk: ^3.13.4
