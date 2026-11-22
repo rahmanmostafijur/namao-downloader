@@ -72,7 +72,8 @@ class _Header extends StatelessWidget {
   const _Header();
 
   @override
-  Widget build(BuildContext context) => const Row(children: [Wordmark(size: 28)]);
+  Widget build(BuildContext context) =>
+      const Row(children: [Wordmark(size: 28)]);
 }
 
 class _GetFormatsButton extends ConsumerWidget {

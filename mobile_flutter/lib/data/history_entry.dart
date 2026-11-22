@@ -115,7 +115,8 @@ class HistoryEntry {
     if (isSaved) return DownloadsTab.completed;
     if (jobGone || isFailed) return DownloadsTab.failed;
     if (isActive) return DownloadsTab.active;
-    return DownloadsTab.completed; // downloaded, but moving it into Downloads failed
+    return DownloadsTab
+        .completed; // downloaded, but moving it into Downloads failed
   }
 
   /// A download that finished and whose file has not been saved to Downloads yet.

@@ -27,14 +27,12 @@ const String genericFailureMessage = 'Something went wrong. Please try again.';
 const Map<String, String> _messages = {
   'invalid_url': "That doesn't look like a valid video link.",
   'unsupported_platform': unsupportedLinkMessage,
-  'unsupported_content':
-      'Only single, non-live videos are supported (no playlists or live streams).',
+  'unsupported_content': 'Only single, non-live videos are supported (no playlists or live streams).',
   'invalid_quality': "That quality option isn't valid.",
   'file_too_large': 'This file is too large to download.',
   'video_unavailable':
       'This video is unavailable. It may be private, deleted, or removed.',
-  'auth_required':
-      "This video requires signing in. Namao can't download it without authorized access.",
+  'auth_required': "This video requires signing in. Namao can't download it without authorized access.",
   'geo_restricted': "This video isn't available in your region.",
   'source_rate_limited':
       'The site is limiting requests right now. Try again later.',
@@ -46,13 +44,13 @@ const Map<String, String> _messages = {
       "The site changed and this video couldn't be read. Try again later.",
   'js_challenge_failed': "The site's check couldn't be completed. Try again.",
   'environment_unsupported': "Namao couldn't get ready on this phone.",
-  'network_transient':
-      'Your internet connection was interrupted.',
+  'network_transient': 'Your internet connection was interrupted.',
   'timeout': 'This took too long and was stopped.',
   'merge_failed':
       "The video was downloaded but couldn't be finished. Please try again.",
   'output_invalid': "The downloaded file couldn't be used. Please try again.",
-  'storage_full': 'Not enough free space on this phone. Free some up and retry.',
+  'storage_full':
+      'Not enough free space on this phone. Free some up and retry.',
   'metadata_failed': "Couldn't read this video's information.",
   'download_failed': genericFailureMessage,
   'cancelled': 'The download was cancelled.',
@@ -68,7 +66,8 @@ const Map<String, String> _hints = {
   'file_too_large': 'Pick a lower quality.',
   'format_unavailable': 'Pick another quality and try again.',
   'expired': 'Use Retry to download it again from the source.',
-  'auth_required': 'Namao is for public videos only; it does not bypass logins.',
+  'auth_required':
+      'Namao is for public videos only; it does not bypass logins.',
   'access_blocked': 'Try again later, or on a different network.',
   'engine_outdated': 'Connect to the internet and try again.',
   'environment_unsupported': 'Close Namao and open it again.',

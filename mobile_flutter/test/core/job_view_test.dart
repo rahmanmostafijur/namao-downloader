@@ -36,8 +36,20 @@ void main() {
     test('no label uses technical terms', () {
       for (final status in JobStatus.values) {
         final label = describeJob(makeJob(status: status)).label.toLowerCase();
-        for (final banned in ['server', 'queue', 'metadata', 'merg', 'verif', 'ffmpeg', 'yt-dlp']) {
-          expect(label, isNot(contains(banned)), reason: '${status.wire}: $label');
+        for (final banned in [
+          'server',
+          'queue',
+          'metadata',
+          'merg',
+          'verif',
+          'ffmpeg',
+          'yt-dlp',
+        ]) {
+          expect(
+            label,
+            isNot(contains(banned)),
+            reason: '${status.wire}: $label',
+          );
         }
       }
     });

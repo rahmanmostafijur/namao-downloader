@@ -51,17 +51,47 @@ void main() {
 
     test('no message mentions servers, keys or technical tools', () {
       for (final code in [
-        'invalid_url', 'unsupported_platform', 'unsupported_content', 'invalid_quality',
-        'file_too_large', 'video_unavailable', 'auth_required', 'geo_restricted',
-        'source_rate_limited', 'access_blocked', 'format_unavailable', 'engine_outdated',
-        'extractor_broken', 'js_challenge_failed', 'environment_unsupported',
-        'network_transient', 'timeout', 'merge_failed', 'output_invalid', 'storage_full',
-        'metadata_failed', 'download_failed', 'cancelled', 'interrupted', 'expired',
+        'invalid_url',
+        'unsupported_platform',
+        'unsupported_content',
+        'invalid_quality',
+        'file_too_large',
+        'video_unavailable',
+        'auth_required',
+        'geo_restricted',
+        'source_rate_limited',
+        'access_blocked',
+        'format_unavailable',
+        'engine_outdated',
+        'extractor_broken',
+        'js_challenge_failed',
+        'environment_unsupported',
+        'network_transient',
+        'timeout',
+        'merge_failed',
+        'output_invalid',
+        'storage_full',
+        'metadata_failed',
+        'download_failed',
+        'cancelled',
+        'interrupted',
+        'expired',
       ]) {
         final shown = presentApiError(failure(code, ''));
         final text = '${shown.message} ${shown.hint ?? ''}'.toLowerCase();
-        for (final banned in ['server', 'yt-dlp', 'ffmpeg', 'python', 'api key', 'backend']) {
-          expect(text, isNot(contains(banned)), reason: '$code mentions "$banned"');
+        for (final banned in [
+          'server',
+          'yt-dlp',
+          'ffmpeg',
+          'python',
+          'api key',
+          'backend',
+        ]) {
+          expect(
+            text,
+            isNot(contains(banned)),
+            reason: '$code mentions "$banned"',
+          );
         }
       }
     });

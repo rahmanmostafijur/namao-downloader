@@ -107,14 +107,21 @@ class FileSaver {
       );
     }
     if (token?.isCancelled ?? false) {
-      throw const TransferException(TransferFailure.cancelled, 'Save cancelled.');
+      throw const TransferException(
+        TransferFailure.cancelled,
+        'Save cancelled.',
+      );
     }
     final saved = await _store(file, filename, expectedBytes);
     await api.release(jobId);
     return saved;
   }
 
-  Future<SavedMedia> _store(File file, String filename, int expectedBytes) async {
+  Future<SavedMedia> _store(
+    File file,
+    String filename,
+    int expectedBytes,
+  ) async {
     try {
       return await media.saveToDownloads(
         tempPath: file.path,

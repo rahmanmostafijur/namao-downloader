@@ -53,21 +53,24 @@ void main() {
     expect(h.api.calls, contains('prepare'));
   });
 
-  test('SettingsStore removes the server address an older version saved', () async {
-    final h = await TestHarness.create(
-      prefsValues: {
-        'settings.server_url': 'http://192.168.1.9:8000',
-        'settings.theme_mode': 'dark',
-      },
-    );
-    addTearDown(h.dispose);
-    final store = SettingsStore(h.prefs);
+  test(
+    'SettingsStore removes the server address an older version saved',
+    () async {
+      final h = await TestHarness.create(
+        prefsValues: {
+          'settings.server_url': 'http://192.168.1.9:8000',
+          'settings.theme_mode': 'dark',
+        },
+      );
+      addTearDown(h.dispose);
+      final store = SettingsStore(h.prefs);
 
-    final loaded = store.load();
+      final loaded = store.load();
 
-    expect(loaded.themeMode, ThemeMode.dark);
-    expect(h.prefs.containsKey('settings.server_url'), isFalse);
-  });
+      expect(loaded.themeMode, ThemeMode.dark);
+      expect(h.prefs.containsKey('settings.server_url'), isFalse);
+    },
+  );
 
   test('SettingsStore saves and reloads the theme', () async {
     final h = await TestHarness.create();

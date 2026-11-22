@@ -25,7 +25,10 @@ class DownloadTile extends ConsumerWidget {
     final entry = ref.watch(entryProvider(jobId));
     if (entry == null) return const SizedBox.shrink();
     final lost = ref.watch(lostProvider(jobId));
-    return _TileBody(entry: entry, view: describeEntry(entry, lost: lost));
+    return _TileBody(
+      entry: entry,
+      view: describeEntry(entry, lost: lost),
+    );
   }
 }
 
@@ -219,8 +222,7 @@ class _Actions extends ConsumerWidget {
     if (!context.mounted) return;
     final message = switch (result) {
       FileActionResult.ok => null,
-      FileActionResult.fileMissing =>
-        'That file is no longer in Downloads/Namao. Use Retry to download it again.',
+      FileActionResult.fileMissing => 'That file is no longer in Downloads/Namao. Use Retry to download it again.',
       FileActionResult.noAppFound =>
         'No app on this phone can open that file. Try Share.',
       FileActionResult.failed => "Couldn't complete that action.",

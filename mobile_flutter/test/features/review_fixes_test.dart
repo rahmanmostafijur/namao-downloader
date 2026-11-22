@@ -53,20 +53,23 @@ void main() {
       return home;
     }
 
-    test('re-selecting the same format after a failed tap does not crash', () async {
-      h.api.hangJobs = true;
-      final home = await readyHome();
-      home.selectFormat('1080');
-      h.api.createResult = _unreadable;
-      await home.startDownload();
-      expect(container.read(homeProvider).isStarting, isFalse);
+    test(
+      're-selecting the same format after a failed tap does not crash',
+      () async {
+        h.api.hangJobs = true;
+        final home = await readyHome();
+        home.selectFormat('1080');
+        h.api.createResult = _unreadable;
+        await home.startDownload();
+        expect(container.read(homeProvider).isStarting, isFalse);
 
-      home.selectFormat('1080'); // the same row tapped again
-      h.api.createResult = 'auto';
-      await home.startDownload();
-      expect(h.api.idempotencyKeys, ['key-1', 'key-2']);
-      expect(container.read(homeProvider).addedJobId, isNotNull);
-    });
+        home.selectFormat('1080'); // the same row tapped again
+        h.api.createResult = 'auto';
+        await home.startDownload();
+        expect(h.api.idempotencyKeys, ['key-1', 'key-2']);
+        expect(container.read(homeProvider).addedJobId, isNotNull);
+      },
+    );
 
     test('an unexpected local error resets the button instead of leaving it loading', () async {
       h.api.hangJobs = true;
@@ -101,27 +104,34 @@ void main() {
 
   group('a missing job versus a failure to read it', () {
     test('only a missing job or file means the download is gone', () {
-      const missing = ApiException(code: 'not_found', message: 'x', status: 404);
+      const missing = ApiException(
+        code: 'not_found',
+        message: 'x',
+        status: 404,
+      );
       const expired = ApiException(code: 'expired', message: 'x', status: 410);
       expect(missing.isJobGone, isTrue);
       expect(expired.isJobGone, isTrue);
       expect(_unreadable.isJobGone, isFalse);
     });
 
-    test('the poller treats a failure to read as transient, not as gone', () async {
-      final api = FakeApi()..script('j', [_unreadable]);
-      final losses = <PollLoss>[];
-      await JobPoller(
-        api: api,
-        jobId: 'j',
-        onJob: (_) {},
-        onLost: (r, e) => losses.add(r),
-        maxConsecutiveFailures: 2,
-        delay: (_) async {},
-      ).start();
-      expect(losses, [PollLoss.unreachable]);
-      api.dispose();
-    });
+    test(
+      'the poller treats a failure to read as transient, not as gone',
+      () async {
+        final api = FakeApi()..script('j', [_unreadable]);
+        final losses = <PollLoss>[];
+        await JobPoller(
+          api: api,
+          jobId: 'j',
+          onJob: (_) {},
+          onLost: (r, e) => losses.add(r),
+          maxConsecutiveFailures: 2,
+          delay: (_) async {},
+        ).start();
+        expect(losses, [PollLoss.unreachable]);
+        api.dispose();
+      },
+    );
   });
 
   group('poller', () {
@@ -175,7 +185,11 @@ void main() {
         () => h.media.events.where((e) => e == 'stopTransfer').length == 1,
         reason: 'the notification is stopped once nothing is active',
       );
-      expect(h.api.hasWorkingFile('c'), isTrue, reason: 'kept so Retry save can work');
+      expect(
+        h.api.hasWorkingFile('c'),
+        isTrue,
+        reason: 'kept so Retry save can work',
+      );
     });
   });
 }

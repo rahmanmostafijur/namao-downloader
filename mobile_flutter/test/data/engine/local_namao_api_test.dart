@@ -75,9 +75,31 @@ String infoLines({bool live = false, int duration = 100}) {
     'is_live': live,
   };
   final formats = [
-    {'format_id': '137', 'height': 1080, 'fps': 30.0, 'vcodec': 'avc1', 'acodec': 'none', 'tbr': 4000.0, 'filesize': 1000},
-    {'format_id': '22', 'height': 720, 'fps': 30.0, 'vcodec': 'avc1', 'acodec': 'mp4a', 'tbr': 1500.0, 'filesize': 500},
-    {'format_id': '140', 'vcodec': 'none', 'acodec': 'mp4a', 'abr': 128.0, 'filesize': 100},
+    {
+      'format_id': '137',
+      'height': 1080,
+      'fps': 30.0,
+      'vcodec': 'avc1',
+      'acodec': 'none',
+      'tbr': 4000.0,
+      'filesize': 1000,
+    },
+    {
+      'format_id': '22',
+      'height': 720,
+      'fps': 30.0,
+      'vcodec': 'avc1',
+      'acodec': 'mp4a',
+      'tbr': 1500.0,
+      'filesize': 500,
+    },
+    {
+      'format_id': '140',
+      'vcodec': 'none',
+      'acodec': 'mp4a',
+      'abr': 128.0,
+      'filesize': 100,
+    },
   ];
   return '${jsonEncode(info)}\n${jsonEncode(formats)}\n';
 }
@@ -118,17 +140,27 @@ void main() {
       expect(engine.initCount, 1);
     });
 
-    test('a failure is reported plainly and a later call tries again', () async {
-      engine.initError = const LocalEngineException('init_failed', 'python: cannot unpack');
-      final error = await thrown(api.prepare());
-      expect(error.code, 'environment_unsupported');
-      expect(error.retryable, isTrue);
-      expect(error.message, isNot(contains('python')), reason: 'technical text stays internal');
+    test(
+      'a failure is reported plainly and a later call tries again',
+      () async {
+        engine.initError = const LocalEngineException(
+          'init_failed',
+          'python: cannot unpack',
+        );
+        final error = await thrown(api.prepare());
+        expect(error.code, 'environment_unsupported');
+        expect(error.retryable, isTrue);
+        expect(
+          error.message,
+          isNot(contains('python')),
+          reason: 'technical text stays internal',
+        );
 
-      engine.initError = null;
-      await api.prepare();
-      expect(engine.initCount, 2);
-    });
+        engine.initError = null;
+        await api.prepare();
+        expect(engine.initCount, 2);
+      },
+    );
   });
 
   group('metadata', () {
@@ -141,7 +173,11 @@ void main() {
       expect(metadata.platform, 'youtube');
       expect(metadata.formats.map((f) => f.id), ['1080', '720', 'audio']);
       expect(metadata.durationSeconds, 100);
-      expect(engine.initCount, 1, reason: 'the engine is prepared on first use');
+      expect(
+        engine.initCount,
+        1,
+        reason: 'the engine is prepared on first use',
+      );
       expect(engine.lastRunOptions, contains('--use-extractors'));
     });
 
@@ -181,61 +217,104 @@ void main() {
 
       expect(job.id, 'job-1');
       expect(job.status, JobStatus.fetchingMetadata);
-      expect(engine.startedOptions['job-1']!.join(' '), contains('bv*[height=720]+ba/b[height=720]'));
+      expect(
+        engine.startedOptions['job-1']!.join(' '),
+        contains('bv*[height=720]+ba/b[height=720]'),
+      );
     });
 
     test('audio-only asks for MP3', () async {
       await api.createDownload('https://youtu.be/abc', 'audio', 'k1');
-      expect(engine.startedOptions['job-1']!.join(' '), contains('--audio-format mp3'));
+      expect(
+        engine.startedOptions['job-1']!.join(' '),
+        contains('--audio-format mp3'),
+      );
     });
 
-    test('the same tap (same key) returns the same job and starts nothing new', () async {
-      final first = await api.createDownload('https://youtu.be/abc', '720', 'same');
-      final second = await api.createDownload('https://youtu.be/abc', '720', 'same');
+    test(
+      'the same tap (same key) returns the same job and starts nothing new',
+      () async {
+        final first = await api.createDownload(
+          'https://youtu.be/abc',
+          '720',
+          'same',
+        );
+        final second = await api.createDownload(
+          'https://youtu.be/abc',
+          '720',
+          'same',
+        );
 
-      expect(second.id, first.id);
-      expect(engine.calls.where((c) => c.startsWith('start')).length, 1);
-    });
+        expect(second.id, first.id);
+        expect(engine.calls.where((c) => c.startsWith('start')).length, 1);
+      },
+    );
 
     test('a different tap starts a different job', () async {
-      final first = await api.createDownload('https://youtu.be/abc', '720', 'a');
-      final second = await api.createDownload('https://youtu.be/abc', '720', 'b');
+      final first = await api.createDownload(
+        'https://youtu.be/abc',
+        '720',
+        'a',
+      );
+      final second = await api.createDownload(
+        'https://youtu.be/abc',
+        '720',
+        'b',
+      );
       expect(second.id, isNot(first.id));
     });
 
     test('an invalid quality is refused before anything starts', () async {
-      final error = await thrown(api.createDownload('https://youtu.be/abc', '720; rm -rf', 'k'));
+      final error = await thrown(
+        api.createDownload('https://youtu.be/abc', '720; rm -rf', 'k'),
+      );
       expect(error.code, 'invalid_quality');
       expect(error.status, 400);
       expect(engine.calls.where((c) => c.startsWith('start')), isEmpty);
     });
 
-    test('an engine that fails to start is reported without technical text', () async {
-      engine.startError = const LocalEngineException('engine_error', 'Cannot run program libpython.so');
-      final error = await thrown(api.createDownload('https://youtu.be/abc', '720', 'k'));
-      expect(error.message, isNot(contains('libpython')));
-    });
+    test(
+      'an engine that fails to start is reported without technical text',
+      () async {
+        engine.startError = const LocalEngineException(
+          'engine_error',
+          'Cannot run program libpython.so',
+        );
+        final error = await thrown(
+          api.createDownload('https://youtu.be/abc', '720', 'k'),
+        );
+        expect(error.message, isNot(contains('libpython')));
+      },
+    );
   });
 
   group('job progress', () {
     Future<String> started({String quality = '1080'}) async {
       engine.runOutput = infoLines();
       await api.metadata('https://youtu.be/abc');
-      return (await api.createDownload('https://youtu.be/abc', quality, 'k')).id;
+      return (await api.createDownload(
+        'https://youtu.be/abc',
+        quality,
+        'k',
+      )).id;
     }
 
-    test('before the first byte it is "preparing", with no invented percentage', () async {
-      final id = await started();
-      engine.statuses[id] = const EngineStatus(state: EngineJobState.running);
+    test(
+      'before the first byte it is "preparing", with no invented percentage',
+      () async {
+        final id = await started();
+        engine.statuses[id] = const EngineStatus(state: EngineJobState.running);
 
-      final job = await api.getJob(id);
+        final job = await api.getJob(id);
 
-      expect(job.status, JobStatus.fetchingMetadata);
-      expect(job.progress.percent, 0);
-    });
+        expect(job.status, JobStatus.fetchingMetadata);
+        expect(job.progress.percent, 0);
+      },
+    );
 
     test('downloading reports real bytes, speed and time left', () async {
-      final id = await started(); // 1080: needs a merge, announced as 1100 bytes
+      final id =
+          await started(); // 1080: needs a merge, announced as 1100 bytes
       engine.statuses[id] = const EngineStatus(
         state: EngineJobState.running,
         streams: [StreamProgress(downloaded: 550, total: 1000, done: false)],
@@ -252,36 +331,53 @@ void main() {
       expect(job.progress.etaSeconds, 14);
     });
 
-    test('progress only moves forward across the video and audio transfers', () async {
-      final id = await started();
-      final seen = <double>[];
-      for (final streams in [
-        [const StreamProgress(downloaded: 500, total: 1000, done: false)],
-        [const StreamProgress(downloaded: 1000, total: 1000, done: true)],
-        [
-          const StreamProgress(downloaded: 1000, total: 1000, done: true),
-          const StreamProgress(downloaded: 10, total: 100, done: false),
-        ],
-      ]) {
-        engine.statuses[id] = EngineStatus(state: EngineJobState.running, streams: streams);
-        seen.add((await api.getJob(id)).progress.percent);
-      }
-      expect(seen, orderedEquals([...seen]..sort()));
-      expect(seen.last, lessThan(100));
-    });
+    test(
+      'progress only moves forward across the video and audio transfers',
+      () async {
+        final id = await started();
+        final seen = <double>[];
+        for (final streams in [
+          [const StreamProgress(downloaded: 500, total: 1000, done: false)],
+          [const StreamProgress(downloaded: 1000, total: 1000, done: true)],
+          [
+            const StreamProgress(downloaded: 1000, total: 1000, done: true),
+            const StreamProgress(downloaded: 10, total: 100, done: false),
+          ],
+        ]) {
+          engine.statuses[id] = EngineStatus(
+            state: EngineJobState.running,
+            streams: streams,
+          );
+          seen.add((await api.getJob(id)).progress.percent);
+        }
+        expect(seen, orderedEquals([...seen]..sort()));
+        expect(seen.last, lessThan(100));
+      },
+    );
 
-    test('a download whose formats were never listed still shows steady progress', () async {
-      // No metadata call first (for example a retry after the app restarted): the stream count is unknown.
-      final id = (await api.createDownload('https://youtu.be/abc', '720', 'k2')).id;
-      engine.statuses[id] = const EngineStatus(
-        state: EngineJobState.running,
-        streams: [StreamProgress(downloaded: 800, total: 1000, done: false)],
-      );
+    test(
+      'a download whose formats were never listed still shows steady progress',
+      () async {
+        // No metadata call first (for example a retry after the app restarted): the stream count is unknown.
+        final id = (await api.createDownload(
+          'https://youtu.be/abc',
+          '720',
+          'k2',
+        )).id;
+        engine.statuses[id] = const EngineStatus(
+          state: EngineJobState.running,
+          streams: [StreamProgress(downloaded: 800, total: 1000, done: false)],
+        );
 
-      final job = await api.getJob(id);
+        final job = await api.getJob(id);
 
-      expect(job.progress.percent, closeTo(80, 1), reason: 'not capped at 50% waiting for a second stream');
-    });
+        expect(
+          job.progress.percent,
+          closeTo(80, 1),
+          reason: 'not capped at 50% waiting for a second stream',
+        );
+      },
+    );
 
     test('merging or converting is the "finishing" stage', () async {
       final id = await started();
@@ -313,15 +409,21 @@ void main() {
       expect(job.result!.durationSeconds, 596);
     });
 
-    test('a "completed" job with no usable file is a failure, not a success', () async {
-      final id = await started();
-      engine.statuses[id] = const EngineStatus(state: EngineJobState.completed, size: 0);
+    test(
+      'a "completed" job with no usable file is a failure, not a success',
+      () async {
+        final id = await started();
+        engine.statuses[id] = const EngineStatus(
+          state: EngineJobState.completed,
+          size: 0,
+        );
 
-      final job = await api.getJob(id);
+        final job = await api.getJob(id);
 
-      expect(job.status, JobStatus.failed);
-      expect(job.error!.code, 'output_invalid');
-    });
+        expect(job.status, JobStatus.failed);
+        expect(job.error!.code, 'output_invalid');
+      },
+    );
 
     test('a failure is classified and carries no technical text', () async {
       final id = await started();
@@ -335,7 +437,11 @@ void main() {
       expect(job.status, JobStatus.failed);
       expect(job.error!.code, 'source_rate_limited');
       expect(job.error!.retryable, isTrue);
-      expect(job.error!.message, isEmpty, reason: 'wording comes from the app, not the tool');
+      expect(
+        job.error!.message,
+        isEmpty,
+        reason: 'wording comes from the app, not the tool',
+      );
       expect(job.error!.detail, isNull);
     });
 
@@ -346,20 +452,23 @@ void main() {
       expect(job.error!.retryable, isTrue);
     });
 
-    test('a finished job is remembered and the engine is not asked again', () async {
-      final id = await started();
-      engine.statuses[id] = const EngineStatus(
-        state: EngineJobState.failed,
-        error: 'ERROR: Video unavailable',
-      );
-      await api.getJob(id);
-      final callsBefore = engine.statusCalls;
+    test(
+      'a finished job is remembered and the engine is not asked again',
+      () async {
+        final id = await started();
+        engine.statuses[id] = const EngineStatus(
+          state: EngineJobState.failed,
+          error: 'ERROR: Video unavailable',
+        );
+        await api.getJob(id);
+        final callsBefore = engine.statusCalls;
 
-      final again = await api.getJob(id);
+        final again = await api.getJob(id);
 
-      expect(again.status, JobStatus.failed);
-      expect(engine.statusCalls, callsBefore);
-    });
+        expect(again.status, JobStatus.failed);
+        expect(engine.statusCalls, callsBefore);
+      },
+    );
 
     test('a cancelled job reads as cancelled', () async {
       final id = await started();
@@ -367,19 +476,30 @@ void main() {
       expect((await api.getJob(id)).status, JobStatus.cancelled);
     });
 
-    test('an engine that stops answering is a read failure, not a made-up state', () async {
-      final id = await started();
-      final broken = _ThrowingStatusEngine(engine);
-      final failing = LocalNamaoApi(engine: broken, newId: () => id, allowAnyLink: false);
-      final error = await thrown(failing.getJob(id));
-      expect(error.isJobGone, isFalse);
-      expect(error.retryable, isTrue);
-    });
+    test(
+      'an engine that stops answering is a read failure, not a made-up state',
+      () async {
+        final id = await started();
+        final broken = _ThrowingStatusEngine(engine);
+        final failing = LocalNamaoApi(
+          engine: broken,
+          newId: () => id,
+          allowAnyLink: false,
+        );
+        final error = await thrown(failing.getJob(id));
+        expect(error.isJobGone, isFalse);
+        expect(error.retryable, isTrue);
+      },
+    );
   });
 
   group('cancel', () {
     test('stops a running download', () async {
-      final id = (await api.createDownload('https://youtu.be/abc', '720', 'k')).id;
+      final id = (await api.createDownload(
+        'https://youtu.be/abc',
+        '720',
+        'k',
+      )).id;
       engine.statuses[id] = const EngineStatus(state: EngineJobState.running);
 
       final job = await api.cancel(id);
@@ -389,39 +509,58 @@ void main() {
       expect((await api.getJob(id)).status, JobStatus.cancelled);
     });
 
-    test('a download that already finished is a conflict, not a cancel', () async {
-      final id = (await api.createDownload('https://youtu.be/abc', '720', 'k')).id;
-      engine.statuses[id] = const EngineStatus(state: EngineJobState.failed, error: 'x');
+    test(
+      'a download that already finished is a conflict, not a cancel',
+      () async {
+        final id = (await api.createDownload(
+          'https://youtu.be/abc',
+          '720',
+          'k',
+        )).id;
+        engine.statuses[id] = const EngineStatus(
+          state: EngineJobState.failed,
+          error: 'x',
+        );
 
-      final error = await thrown(api.cancel(id));
+        final error = await thrown(api.cancel(id));
 
-      expect(error.status, 409);
-      expect(engine.calls, isNot(contains('cancel $id')));
-    });
+        expect(error.status, 409);
+        expect(engine.calls, isNot(contains('cancel $id')));
+      },
+    );
   });
 
   group('the finished file', () {
     test('is the file on disk once the job completed', () async {
       final file = File('${temp.path}/media.mp4')..writeAsBytesSync([1, 2, 3]);
-      engine.statuses['j'] = EngineStatus(state: EngineJobState.completed, path: file.path, size: 3);
+      engine.statuses['j'] = EngineStatus(
+        state: EngineJobState.completed,
+        path: file.path,
+        size: 3,
+      );
 
       final found = await api.finishedFile('j');
 
       expect(found.path, file.path);
     });
 
-    test('is "gone" when the job is unknown, unfinished, or its file was deleted', () async {
-      engine.statuses['running'] = const EngineStatus(state: EngineJobState.running);
-      engine.statuses['deleted'] = EngineStatus(
-        state: EngineJobState.completed,
-        path: '${temp.path}/nope.mp4',
-        size: 3,
-      );
-      for (final id in ['unknown', 'running', 'deleted']) {
-        final error = await thrown(api.finishedFile(id));
-        expect(error.isJobGone, isTrue, reason: id);
-      }
-    });
+    test(
+      'is "gone" when the job is unknown, unfinished, or its file was deleted',
+      () async {
+        engine.statuses['running'] = const EngineStatus(
+          state: EngineJobState.running,
+        );
+        engine.statuses['deleted'] = EngineStatus(
+          state: EngineJobState.completed,
+          path: '${temp.path}/nope.mp4',
+          size: 3,
+        );
+        for (final id in ['unknown', 'running', 'deleted']) {
+          final error = await thrown(api.finishedFile(id));
+          expect(error.isJobGone, isTrue, reason: id);
+        }
+      },
+    );
   });
 
   group('cleanup', () {
@@ -444,7 +583,10 @@ void main() {
   group('an old engine', () {
     test('is blamed (and retryable) when a site stops working', () async {
       engine.version = '2025.01.01'; // far older than the freshness limit
-      engine.runError = const LocalEngineException('run_failed', 'ERROR: Unable to extract initial data');
+      engine.runError = const LocalEngineException(
+        'run_failed',
+        'ERROR: Unable to extract initial data',
+      );
 
       final error = await thrown(api.metadata('https://youtu.be/abc'));
 
@@ -453,7 +595,10 @@ void main() {
     });
 
     test('a fresh engine is not blamed', () async {
-      engine.runError = const LocalEngineException('run_failed', 'ERROR: Unable to extract initial data');
+      engine.runError = const LocalEngineException(
+        'run_failed',
+        'ERROR: Unable to extract initial data',
+      );
 
       final error = await thrown(api.metadata('https://youtu.be/abc'));
 

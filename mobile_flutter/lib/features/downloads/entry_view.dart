@@ -94,7 +94,8 @@ EntryView _unavailable(HistoryEntry entry) => const EntryView(
   label: 'No longer available',
   tone: StatusTone.danger,
   tab: DownloadsTab.failed,
-  message: 'This download is no longer on this phone. Retry downloads it again.',
+  message:
+      'This download is no longer on this phone. Retry downloads it again.',
   messageIsError: true,
   canRetry: true,
   canRemove: true,

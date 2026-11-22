@@ -252,7 +252,9 @@ class DownloadsController extends Notifier<DownloadsState> {
       _applyJob(await ref.read(apiProvider).cancel(jobId));
     } on ApiException catch (error) {
       if (error.status == 409) {
-        await _refreshOnce(jobId); // already finished: show what really happened
+        await _refreshOnce(
+          jobId,
+        ); // already finished: show what really happened
         return;
       }
       rethrow;

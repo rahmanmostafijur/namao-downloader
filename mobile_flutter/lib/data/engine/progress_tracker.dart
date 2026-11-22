@@ -89,6 +89,8 @@ class ProgressTracker {
         sum += math.min(0.999, s.downloaded / s.total);
       }
     }
-    return sum * 100 / math.max(math.max(expectedStreams ?? 1, streams.length), 1);
+    return sum *
+        100 /
+        math.max(math.max(expectedStreams ?? 1, streams.length), 1);
   }
 }

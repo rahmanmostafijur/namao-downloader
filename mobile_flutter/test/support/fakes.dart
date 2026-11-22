@@ -35,14 +35,8 @@ Job makeJob({
   updatedAt: updatedAt,
 );
 
-JobResult makeResult({
-  String filename = 'Video.mp4',
-  int sizeBytes = 10,
-}) => JobResult(
-  filename: filename,
-  sizeBytes: sizeBytes,
-  downloadUrl: 'device',
-);
+JobResult makeResult({String filename = 'Video.mp4', int sizeBytes = 10}) =>
+    JobResult(filename: filename, sizeBytes: sizeBytes, downloadUrl: 'device');
 
 const ApiException notFound = ApiException(
   code: 'not_found',

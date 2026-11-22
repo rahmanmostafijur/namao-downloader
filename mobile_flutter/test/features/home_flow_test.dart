@@ -118,64 +118,65 @@ void main() {
     },
   );
 
-  testWidgets(
-    'a refusal shows its message; non-retryable offers no Retry',
-    (tester) async {
-      final h = await TestHarness.create();
-      addTearDown(h.dispose);
-      h.api.metadataError = const ApiException(
-        code: 'unsupported_content',
-        message: 'Only single, non-live videos are supported.',
-        status: 400,
-      );
-      await pumpNamao(tester, h);
-      await tester.enterText(find.byType(TextField), 'https://youtu.be/abc');
-      await settle(tester);
-      await tester.tap(find.text('Get formats'));
-      await settle(tester);
-      expect(
-        find.text('Only single, non-live videos are supported.'),
-        findsOneWidget,
-      );
-      expect(find.text('Retry'), findsNothing);
-    },
-  );
-
-  testWidgets('a failed Download keeps formats; the next tap starts a fresh one', (
+  testWidgets('a refusal shows its message; non-retryable offers no Retry', (
     tester,
   ) async {
     final h = await TestHarness.create();
-    h.api.hangJobs = true;
     addTearDown(h.dispose);
+    h.api.metadataError = const ApiException(
+      code: 'unsupported_content',
+      message: 'Only single, non-live videos are supported.',
+      status: 400,
+    );
     await pumpNamao(tester, h);
     await tester.enterText(find.byType(TextField), 'https://youtu.be/abc');
     await settle(tester);
     await tester.tap(find.text('Get formats'));
     await settle(tester);
-    await tester.tap(find.text('1080p'));
-    await settle(tester);
-
-    h.api.createResult = const ApiException(
-      code: 'environment_unsupported',
-      message: "Namao couldn't get ready on this phone.",
-      retryable: true,
-    );
-    await tester.tap(find.text('Download 1080p'));
-    await settle(tester);
-    expect(find.textContaining("couldn't get ready"), findsWidgets);
     expect(
-      find.text('Download 1080p'),
+      find.text('Only single, non-live videos are supported.'),
       findsOneWidget,
-      reason: 'formats and button remain',
     );
-
-    h.api.createResult = 'auto';
-    await tester.tap(find.text('Download 1080p'));
-    await settle(tester);
-    expect(h.api.idempotencyKeys, [
-      'key-1',
-      'key-2',
-    ], reason: 'each tap is its own download; nothing is sent over a network to lose');
-    expect(find.text('Added to Downloads'), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
   });
+
+  testWidgets(
+    'a failed Download keeps formats; the next tap starts a fresh one',
+    (tester) async {
+      final h = await TestHarness.create();
+      h.api.hangJobs = true;
+      addTearDown(h.dispose);
+      await pumpNamao(tester, h);
+      await tester.enterText(find.byType(TextField), 'https://youtu.be/abc');
+      await settle(tester);
+      await tester.tap(find.text('Get formats'));
+      await settle(tester);
+      await tester.tap(find.text('1080p'));
+      await settle(tester);
+
+      h.api.createResult = const ApiException(
+        code: 'environment_unsupported',
+        message: "Namao couldn't get ready on this phone.",
+        retryable: true,
+      );
+      await tester.tap(find.text('Download 1080p'));
+      await settle(tester);
+      expect(find.textContaining("couldn't get ready"), findsWidgets);
+      expect(
+        find.text('Download 1080p'),
+        findsOneWidget,
+        reason: 'formats and button remain',
+      );
+
+      h.api.createResult = 'auto';
+      await tester.tap(find.text('Download 1080p'));
+      await settle(tester);
+      expect(
+        h.api.idempotencyKeys,
+        ['key-1', 'key-2'],
+        reason: 'each tap is its own download; nothing is sent over a network to lose',
+      );
+      expect(find.text('Added to Downloads'), findsOneWidget);
+    },
+  );
 }

@@ -72,7 +72,8 @@ class LocalNamaoApi implements NamaoApi {
   }
 
   bool get _engineIsStale {
-    final match = RegExp(r'^(\d{4})\.(\d{1,2})\.(\d{1,2})').firstMatch(_engineVersion ?? '');
+    final match = RegExp(r'^(\d{4})\.(\d{1,2})\.(\d{1,2})')
+        .firstMatch(_engineVersion ?? '');
     if (match == null) return false;
     final released = DateTime(
       int.parse(match.group(1)!),
@@ -89,7 +90,10 @@ class LocalNamaoApi implements NamaoApi {
     await prepare();
     final String output;
     try {
-      output = await _engine.run(url, metadataOptions(allowAnyLink: _allowAnyLink));
+      output = await _engine.run(
+        url,
+        metadataOptions(allowAnyLink: _allowAnyLink),
+      );
     } on LocalEngineException catch (error) {
       throw _fromEngineError(error, metadataPhase: true);
     }
@@ -122,7 +126,11 @@ class LocalNamaoApi implements NamaoApi {
   // ------------------------------------------------------------------ downloads
 
   @override
-  Future<Job> createDownload(String url, String quality, String idempotencyKey) async {
+  Future<Job> createDownload(
+    String url,
+    String quality,
+    String idempotencyKey,
+  ) async {
     final existing = _idByKey[idempotencyKey];
     if (existing != null) return getJob(existing);
     final parsed = Quality.tryParse(quality);
@@ -133,7 +141,11 @@ class LocalNamaoApi implements NamaoApi {
     final format = _formatFor(known, quality);
     final id = _newId();
     try {
-      await _engine.start(id, url, downloadOptions(parsed, allowAnyLink: _allowAnyLink));
+      await _engine.start(
+        id,
+        url,
+        downloadOptions(parsed, allowAnyLink: _allowAnyLink),
+      );
     } on LocalEngineException catch (error) {
       throw _fromEngineError(error, metadataPhase: false);
     }
@@ -181,7 +193,11 @@ class LocalNamaoApi implements NamaoApi {
     }
     final job = status == null
         ? _interrupted(id)
-        : _toJob(id, tracked ?? _Tracked(tracker: ProgressTracker(expectedStreams: 1)), status);
+        : _toJob(
+            id,
+            tracked ?? _Tracked(tracker: ProgressTracker(expectedStreams: 1)),
+            status,
+          );
     if (tracked != null && job.status.isTerminal) tracked.terminal = job;
     return job;
   }
@@ -191,12 +207,21 @@ class LocalNamaoApi implements NamaoApi {
     status: JobStatus.interrupted,
     platform: '',
     quality: '',
-    error: const ApiErrorBody(code: 'interrupted', message: '', retryable: true),
+    error: const ApiErrorBody(
+      code: 'interrupted',
+      message: '',
+      retryable: true,
+    ),
   );
 
   Job _toJob(String id, _Tracked tracked, EngineStatus status) {
     final title = status.title ?? tracked.title;
-    Job job(JobStatus s, {JobProgress? progress, ApiErrorBody? error, JobResult? result}) => Job(
+    Job job(
+      JobStatus s, {
+      JobProgress? progress,
+      ApiErrorBody? error,
+      JobResult? result,
+    }) => Job(
       id: id,
       status: s,
       platform: '',
@@ -210,7 +235,10 @@ class LocalNamaoApi implements NamaoApi {
     switch (status.state) {
       case EngineJobState.running:
         if (status.processing) {
-          return job(JobStatus.merging, progress: const JobProgress(percent: 99));
+          return job(
+            JobStatus.merging,
+            progress: const JobProgress(percent: 99),
+          );
         }
         if (status.streams.isEmpty) return job(JobStatus.fetchingMetadata);
         final snapshot = tracked.tracker.update(status.streams);
@@ -229,10 +257,18 @@ class LocalNamaoApi implements NamaoApi {
         if (result == null) {
           return job(
             JobStatus.failed,
-            error: const ApiErrorBody(code: 'output_invalid', message: '', retryable: true),
+            error: const ApiErrorBody(
+              code: 'output_invalid',
+              message: '',
+              retryable: true,
+            ),
           );
         }
-        return job(JobStatus.completed, progress: const JobProgress(percent: 100), result: result);
+        return job(
+          JobStatus.completed,
+          progress: const JobProgress(percent: 100),
+          result: result,
+        );
       case EngineJobState.cancelled:
         return job(JobStatus.cancelled);
       case EngineJobState.failed:
@@ -244,7 +280,11 @@ class LocalNamaoApi implements NamaoApi {
         _log('download failed (${failure.code})', status.error ?? '');
         return job(
           JobStatus.failed,
-          error: ApiErrorBody(code: failure.code, message: '', retryable: failure.retryable),
+          error: ApiErrorBody(
+            code: failure.code,
+            message: '',
+            retryable: failure.retryable,
+          ),
         );
     }
   }
@@ -311,7 +351,10 @@ class LocalNamaoApi implements NamaoApi {
     try {
       await _engine.release(id);
     } on LocalEngineException catch (error) {
-      _log('release failed', error.message); // leftovers are removed by cleanup() next launch
+      _log(
+        'release failed',
+        error.message,
+      ); // leftovers are removed by cleanup() next launch
     }
   }
 
@@ -326,14 +369,18 @@ class LocalNamaoApi implements NamaoApi {
 
   // --------------------------------------------------------------------- errors
 
-  ApiException _failure(String code, {bool retryable = false, int? status}) => ApiException(
-    code: code,
-    message: messageForCode(code),
-    retryable: retryable,
-    status: status,
-  );
+  ApiException _failure(String code, {bool retryable = false, int? status}) =>
+      ApiException(
+        code: code,
+        message: messageForCode(code),
+        retryable: retryable,
+        status: status,
+      );
 
-  ApiException _fromEngineError(LocalEngineException error, {required bool metadataPhase}) {
+  ApiException _fromEngineError(
+    LocalEngineException error, {
+    required bool metadataPhase,
+  }) {
     if (error.code == 'unavailable' || error.code == 'init_failed') {
       _log('engine unavailable', error.message);
       return _failure('environment_unsupported', retryable: true);

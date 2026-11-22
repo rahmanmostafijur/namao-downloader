@@ -100,7 +100,10 @@ void main() {
         find.text('2.0 MB/s · 14s left · 21.0 MB / 50.0 MB'),
         findsOneWidget,
       );
-      expect(find.text('Finishing…'), findsNWidgets(2)); // merging and verifying
+      expect(
+        find.text('Finishing…'),
+        findsNWidgets(2),
+      ); // merging and verifying
 
       // Exactly one determinate bar (the 42% one); queued/merging/verifying are indeterminate.
       final bars = tester.widgetList<LinearProgressIndicator>(
@@ -198,10 +201,7 @@ void main() {
         find.textContaining('interrupted. Start it again'),
         findsOneWidget,
       );
-      expect(
-        find.textContaining('no longer on this phone'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('no longer on this phone'), findsOneWidget);
       // Failed (video_unavailable) is not retryable, the rest are.
       expect(find.text('Retry'), findsNWidgets(3));
     },
@@ -321,7 +321,11 @@ void main() {
       final view = describeEntry(e);
       expect(view.label, 'Finishing…');
       expect(view.showProgress, isTrue);
-      expect(view.progress, isNull, reason: 'indeterminate: no made-up percentage');
+      expect(
+        view.progress,
+        isNull,
+        reason: 'indeterminate: no made-up percentage',
+      );
     });
 
     test('finished but not started saving says Ready, finishing', () {

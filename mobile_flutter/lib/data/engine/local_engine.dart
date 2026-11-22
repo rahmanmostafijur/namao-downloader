@@ -97,7 +97,9 @@ abstract class LocalEngine {
 class MethodChannelLocalEngine implements LocalEngine {
   const MethodChannelLocalEngine();
 
-  static const MethodChannel _channel = MethodChannel('com.namao.flutter/engine');
+  static const MethodChannel _channel = MethodChannel(
+    'com.namao.flutter/engine',
+  );
 
   Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) async {
     try {
@@ -129,7 +131,9 @@ class MethodChannelLocalEngine implements LocalEngine {
 
   @override
   Future<EngineStatus?> status(String jobId) async {
-    final map = await _invoke<Map<Object?, Object?>>('status', {'jobId': jobId});
+    final map = await _invoke<Map<Object?, Object?>>('status', {
+      'jobId': jobId,
+    });
     return map == null ? null : EngineStatus.fromMap(map);
   }
 

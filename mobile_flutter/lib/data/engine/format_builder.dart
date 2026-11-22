@@ -65,7 +65,8 @@ class RawInfo {
       final status = readString(info['live_status']);
       return RawInfo(
         title: readString(info['title']) ?? 'Untitled',
-        uploader: readString(info['uploader']) ?? readString(info['channel']) ?? '',
+        uploader:
+            readString(info['uploader']) ?? readString(info['channel']) ?? '',
         durationSeconds: readInt(info['duration']) ?? 0,
         thumbnail: _safeThumbnail(readString(info['thumbnail'])),
         isLive:
@@ -124,11 +125,14 @@ RawFormat _bestByRate(List<RawFormat> candidates) {
 /// rules as the web client and server, so every client lists the same choices for a link.
 List<FormatOption> buildFormatOptions(RawInfo info) {
   final video = info.formats.where((f) => f.hasVideo).toList();
-  final audioOnly = info.formats.where((f) => f.hasAudio && !f.hasVideo).toList();
+  final audioOnly = info.formats
+      .where((f) => f.hasAudio && !f.hasVideo)
+      .toList();
 
   RawFormat? bestAudio;
   for (final f in audioOnly) {
-    if (bestAudio == null || (f.abr ?? f.tbr ?? 0) > (bestAudio.abr ?? bestAudio.tbr ?? 0)) {
+    if (bestAudio == null ||
+        (f.abr ?? f.tbr ?? 0) > (bestAudio.abr ?? bestAudio.tbr ?? 0)) {
       bestAudio = f;
     }
   }

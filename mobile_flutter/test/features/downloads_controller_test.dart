@@ -120,7 +120,11 @@ void main() {
           'stopTransfer',
         ]),
       );
-      expect(h.api.hasWorkingFile('job1'), isFalse, reason: 'working copy released');
+      expect(
+        h.api.hasWorkingFile('job1'),
+        isFalse,
+        reason: 'working copy released',
+      );
     });
 
     test('history is persisted as the state changes', () async {
@@ -213,14 +217,17 @@ void main() {
       );
     });
 
-    test('a job whose record is gone is marked unavailable, not successful', () async {
-      await boot([seeded('gone')]); // no script -> not found
-      await eventually(
-        () => state().entryFor('gone')!.jobGone,
-        reason: 'gone detection',
-      );
-      expect(state().entryFor('gone')!.tab, DownloadsTab.failed);
-    });
+    test(
+      'a job whose record is gone is marked unavailable, not successful',
+      () async {
+        await boot([seeded('gone')]); // no script -> not found
+        await eventually(
+          () => state().entryFor('gone')!.jobGone,
+          reason: 'gone detection',
+        );
+        expect(state().entryFor('gone')!.tab, DownloadsTab.failed);
+      },
+    );
 
     test('a saved entry is never re-checked and stays saved', () async {
       await boot([
@@ -365,7 +372,9 @@ void main() {
       expect(state().entries, isEmpty);
       expect(container.read(historyStoreProvider).load(), isEmpty);
       expect(
-        h.media.events.where((e) => e.startsWith('save') || e.contains('delete')),
+        h.media.events.where(
+          (e) => e.startsWith('save') || e.contains('delete'),
+        ),
         isEmpty,
         reason: 'no file deletion call exists or is made',
       );
@@ -480,10 +489,7 @@ void main() {
         ),
       ]);
       await boot([seeded('c', status: JobStatus.completed)]);
-      await eventually(
-        () => state().entryFor('c')!.jobGone,
-        reason: 'gone',
-      );
+      await eventually(() => state().entryFor('c')!.jobGone, reason: 'gone');
       expect(state().entryFor('c')!.tab, DownloadsTab.failed);
     });
   });
@@ -519,19 +525,20 @@ void main() {
       );
     });
 
-    test(
-      'a file deleted outside the app is reported and can only be downloaded again',
-      () async {
-        await bootSaved();
-        h.media.existing['content://media/downloads/9'] = false;
-        expect(await controller().openSaved('s'), FileActionResult.fileMissing);
-        final entry = state().entryFor('s')!;
-        expect(entry.isSaved, isFalse);
-        expect(entry.saveError, contains('moved or deleted'));
-        expect(entry.jobGone, isTrue, reason: 'the working copy was released when it was saved');
-        expect(entry.tab, DownloadsTab.failed);
-      },
-    );
+    test('a file deleted outside the app is reported and can only be downloaded again', () async {
+      await bootSaved();
+      h.media.existing['content://media/downloads/9'] = false;
+      expect(await controller().openSaved('s'), FileActionResult.fileMissing);
+      final entry = state().entryFor('s')!;
+      expect(entry.isSaved, isFalse);
+      expect(entry.saveError, contains('moved or deleted'));
+      expect(
+        entry.jobGone,
+        isTrue,
+        reason: 'the working copy was released when it was saved',
+      );
+      expect(entry.tab, DownloadsTab.failed);
+    });
 
     test('no app to open is distinguished from other failures', () async {
       await bootSaved();
