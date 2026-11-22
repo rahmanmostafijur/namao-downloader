@@ -19,7 +19,7 @@ internet connection to reach the video's site.
   or file manager when Android asks. Then open **Namao** and paste a link. The first launch unpacks the downloader and
   fetches its latest site updates, so the first link can take longer than later ones.
 - **Update:** install the newer `namao-android.apk` over the old one. History and settings are kept because every
-  release is signed with the same key. Check the [releases page](https://github.com/rahmanmostafijur/namao-downloader/releases) for new versions; the app does not update itself.
+  release is signed with the same key. Builds after 1.1.0 also check for new releases themselves and offer the update (Android still asks you to confirm the install); see [docs/updates.md](docs/updates.md). The [releases page](https://github.com/rahmanmostafijur/namao-downloader/releases) always has the latest file.
 - **Verify the download (recommended):** the SHA-256 is shown in each release's notes. On Windows run
   `certutil -hashfile namao-android.apk SHA256`; on Linux/macOS `sha256sum namao-android.apk`. The values must match.
   The signing certificate (`CN=Namao`) has the SHA-256 fingerprint

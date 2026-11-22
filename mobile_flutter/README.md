@@ -80,7 +80,9 @@ lib/
   design/    tokens.dart (single source of truth), theme, type, reusable widgets
   features/  home/  downloads/  settings/  shell/
 android/.../kotlin/com/namao/flutter/
-  LocalEngine.kt     runs yt-dlp + FFmpeg, keeps each job's raw state, updates yt-dlp
+  LocalEngine.kt     runs yt-dlp + FFmpeg, keeps each job's raw state
+  EngineUpdates.kt   refreshes yt-dlp: verified download, atomic swap, rollback (policy is in Dart)
+  AppUpdates.kt      hands a downloaded app update to Android's Package Installer
   EngineChannel.kt   the MethodChannel in front of it
   MainActivity.kt    MediaStore saving, open/share, notification permission
   TransferService.kt foreground service (keeps a download alive in the background)

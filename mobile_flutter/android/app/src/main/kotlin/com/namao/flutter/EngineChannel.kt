@@ -66,6 +66,18 @@ class EngineChannel(
             engine.cleanup(call.argument<List<String>>("keep")!!.toSet())
             true
         }
+        // Engine updates (policy lives in Dart; see EngineUpdates.kt).
+        "engineInfo" -> engine.engineInfo()
+        "engineLatest" -> engine.engineLatest()
+        "engineInstall" -> engine.engineInstall(call.argument<String>("version")!!)
+        "engineSetAuto" -> {
+            engine.setAutoUpdate(call.argument<Boolean>("enabled")!!)
+            true
+        }
+        "engineMarkChecked" -> {
+            engine.markChecked()
+            true
+        }
         else -> throw IllegalArgumentException("unknown method ${call.method}")
     }
 

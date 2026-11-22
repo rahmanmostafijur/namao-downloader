@@ -6,6 +6,7 @@ import '../../design/feedback.dart';
 import '../../design/surfaces.dart';
 import '../../design/tokens.dart';
 import '../downloads/downloads_state.dart';
+import '../updates/update_widgets.dart';
 
 /// Shown in About. Kept as one constant so the wording is reviewed in one place.
 const String aboutLimits =
@@ -59,6 +60,7 @@ class SettingsScreen extends ConsumerWidget {
               const SectionLabel('History'),
               const _HistoryCard(),
               const SizedBox(height: NamaoSpace.xl),
+              UpdateSection(appVersion: ref.watch(appVersionProvider).value),
               const SectionLabel('About'),
               const _AboutCard(),
             ],

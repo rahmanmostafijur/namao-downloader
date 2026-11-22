@@ -6,6 +6,7 @@ import '../downloads/downloads_screen.dart';
 import '../downloads/downloads_state.dart';
 import '../home/home_screen.dart';
 import '../settings/settings_screen.dart';
+import '../updates/update_widgets.dart';
 import 'navigation.dart';
 
 const List<({AppTab tab, String label, IconData icon, IconData selectedIcon})>
@@ -43,30 +44,35 @@ class AppShell extends ConsumerWidget {
       index: tab.index,
       children: const [HomeScreen(), DownloadsScreen(), SettingsScreen()],
     );
-    return PopScope(
-      canPop: tab == AppTab.home,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) select(AppTab.home);
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= NamaoLayout.railBreakpoint;
-          return Scaffold(
-            resizeToAvoidBottomInset: true,
-            body: wide
-                ? Row(
-                    children: [
-                      _Rail(selected: tab, onSelected: select),
-                      VerticalDivider(width: 1, color: context.palette.border),
-                      Expanded(child: pages),
-                    ],
-                  )
-                : pages,
-            bottomNavigationBar: wide
-                ? null
-                : _Bar(selected: tab, onSelected: select),
-          );
+    return UpdateEvents(
+      child: PopScope(
+        canPop: tab == AppTab.home,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) select(AppTab.home);
         },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= NamaoLayout.railBreakpoint;
+            return Scaffold(
+              resizeToAvoidBottomInset: true,
+              body: wide
+                  ? Row(
+                      children: [
+                        _Rail(selected: tab, onSelected: select),
+                        VerticalDivider(
+                          width: 1,
+                          color: context.palette.border,
+                        ),
+                        Expanded(child: pages),
+                      ],
+                    )
+                  : pages,
+              bottomNavigationBar: wide
+                  ? null
+                  : _Bar(selected: tab, onSelected: select),
+            );
+          },
+        ),
       ),
     );
   }

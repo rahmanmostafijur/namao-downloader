@@ -45,7 +45,7 @@ launch `LocalEngine.kt` downloads yt-dlp's latest release file directly from
 `SHA2-256SUMS`, and swaps it in atomically. It does this on a fresh install (waiting up to 60 s) and then at
 most once a day in the background. If it fails, the last installed yt-dlp keeps working.
 
-The library's own updater was not used: it goes through the GitHub REST API, which allows 60 anonymous
+(Refresh policy, safety and rollback are described in [updates.md](updates.md).) The library's own updater was not used: it goes through the GitHub REST API, which allows 60 anonymous
 requests per hour per address, and it failed in testing for that reason.
 
 Limits: the checksum and the file come from the same GitHub release, so this guards against corruption and

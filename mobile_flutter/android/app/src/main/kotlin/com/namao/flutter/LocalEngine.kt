@@ -8,16 +8,10 @@ import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 /** An engine failure with the tool's own message (never shown to people; Dart classifies it). */
 class EngineException(val code: String, message: String) : Exception(message)
@@ -32,7 +26,13 @@ class LocalEngine private constructor(private val app: Context) {
     private val pool = Executors.newCachedThreadPool()
     private val jobs = ConcurrentHashMap<String, JobState>()
     private val initLock = Any()
-    private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * Every process that runs the engine holds the read side while it runs; the updater needs the
+     * write side to swap the engine file, so an update can never happen under a running download.
+     */
+    private val gate = ReentrantReadWriteLock()
+    private val updates = EngineUpdates(app, gate) { readVersion() }
 
     @Volatile
     private var initialized = false
@@ -56,9 +56,10 @@ class LocalEngine private constructor(private val app: Context) {
     // ------------------------------------------------------------------ lifecycle
 
     /**
-     * Unpacks the bundled runtime (first launch only) and makes sure yt-dlp is recent: sites change
-     * constantly, so a build that is months old fails. A fresh install updates before returning,
-     * with a time limit; later launches refresh in the background once a day.
+     * Unpacks the bundled runtime (first launch only) and repairs an update that was interrupted.
+     * Sites change constantly, so a build that is months old fails: a fresh install fetches the
+     * newest engine before returning, with a time limit. After that, Dart decides when to check
+     * (see [EngineUpdates]); this class never updates by itself again.
      */
     fun init(): Map<String, Any?> {
         synchronized(initLock) {
@@ -69,88 +70,50 @@ class LocalEngine private constructor(private val app: Context) {
                 } catch (e: Exception) {
                     throw EngineException("init_failed", e.message ?: e.javaClass.simpleName)
                 }
+                updates.recover()
                 initialized = true
-                refreshIfStale()
+                refreshOnFirstRun()
             }
         }
-        return mapOf("version" to readVersion())
+        return mapOf("version" to updates.version)
     }
 
     /**
-     * Updates when the last success is over a day old. A failed attempt is not retried for a few
-     * hours, and only the very first attempt on a new install is waited for: on a network where
-     * GitHub is blocked or slow, every launch would otherwise stall its first link.
+     * Only the very first launch waits for the update: on a network where GitHub is blocked or
+     * slow, waiting on every launch would stall the first link each time.
      */
-    private fun refreshIfStale() {
-        val now = System.currentTimeMillis()
-        val last = prefs.getLong(KEY_LAST_UPDATE, 0L)
-        val attempted = prefs.getLong(KEY_LAST_ATTEMPT, 0L)
-        if (now - last < UPDATE_EVERY_MS) return
-        if (attempted != 0L && now - attempted < RETRY_AFTER_FAILURE_MS) return
-        prefs.edit().putLong(KEY_LAST_ATTEMPT, now).apply()
-        val update = pool.submit { updateNow() }
-        if (last == 0L && attempted == 0L) {
-            try {
-                update.get(FIRST_UPDATE_LIMIT_SECONDS, TimeUnit.SECONDS)
-            } catch (e: Exception) {
-                Log.w(TAG, "first-run engine update did not finish in time", e)
-            }
-        }
-    }
-
-    /**
-     * Fetches yt-dlp's latest release file directly. (The library's own updater goes through the
-     * GitHub REST API, which allows only 60 anonymous requests an hour per address: phones behind a
-     * shared network address fail it.) The file is checked against the release's published
-     * SHA-256 before it replaces the old one, and is swapped in atomically, so a dropped
-     * connection can never leave a broken engine behind.
-     */
-    private fun updateNow() {
+    private fun refreshOnFirstRun() {
+        if (!updates.autoUpdate || !updates.neverChecked) return
+        val update = pool.submit { updates.installLatestQuietly() }
         try {
-            val target = File(app.noBackupFilesDir, "youtubedl-android/yt-dlp/yt-dlp")
-            val partial = File(target.parentFile, "yt-dlp.download")
-            val expected = expectedChecksum()
-            val digest = MessageDigest.getInstance("SHA-256")
-            open(RELEASE_URL + "yt-dlp").use { input ->
-                partial.outputStream().use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        digest.update(buffer, 0, n)
-                        out.write(buffer, 0, n)
-                    }
-                }
-            }
-            val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            if (partial.length() < MIN_YTDLP_BYTES || actual != expected) {
-                partial.delete()
-                throw IOException("downloaded yt-dlp failed verification")
-            }
-            Files.move(partial.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            prefs.edit().putLong(KEY_LAST_UPDATE, System.currentTimeMillis()).apply()
-            Log.i(TAG, "engine updated to ${readVersion()}")
+            update.get(FIRST_UPDATE_LIMIT_SECONDS, TimeUnit.SECONDS)
         } catch (e: Exception) {
-            Log.w(TAG, "engine update failed", e)
+            Log.w(TAG, "first-run engine update did not finish in time", e)
         }
     }
 
-    private fun expectedChecksum(): String {
-        val sums = open(RELEASE_URL + "SHA2-256SUMS").bufferedReader().use { it.readText() }
-        return sums.lineSequence()
-            .map { it.trim().split(Regex("\\s+")) }
-            .firstOrNull { it.size == 2 && it[1].removePrefix("*") == "yt-dlp" }
-            ?.get(0)?.lowercase()
-            ?: throw IOException("no checksum published for yt-dlp")
+    // The update operations, behind the channel. Each waits for the engine to be unpacked first.
+
+    fun engineInfo(): Map<String, Any?> {
+        ensureReady()
+        return updates.info()
     }
 
-    private fun open(url: String): InputStream {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        if (connection.responseCode != 200) throw IOException("HTTP ${connection.responseCode} for $url")
-        return connection.inputStream
+    fun engineLatest(): String {
+        ensureReady()
+        return updates.latestVersion()
     }
+
+    fun engineInstall(version: String): Map<String, Any?> {
+        ensureReady()
+        return updates.install(version)
+    }
+
+    fun setAutoUpdate(enabled: Boolean) {
+        updates.autoUpdate = enabled
+    }
+
+    fun markChecked() = updates.markChecked()
 
     /** The version of the yt-dlp that is installed right now (it changes when an update lands). */
     private fun readVersion(): String? = try {
@@ -168,10 +131,13 @@ class LocalEngine private constructor(private val app: Context) {
         requireWebUrl(url)
         ensureReady()
         val request = YoutubeDLRequest(url).addCommands(args)
+        gate.readLock().lock() // an engine update waits for this to finish, never the reverse
         try {
             return YoutubeDL.getInstance().execute(request, null, null).out
         } catch (e: YoutubeDLException) {
             throw EngineException("run_failed", e.message ?: "")
+        } finally {
+            gate.readLock().unlock()
         }
     }
 
@@ -214,7 +180,12 @@ class LocalEngine private constructor(private val app: Context) {
                     "-o", "$OUTPUT_NAME%(ext)s",
                 ),
             )
-            YoutubeDL.getInstance().execute(request, job.id) { _, _, line -> onLine(job, line) }
+            gate.readLock().lock() // blocks only while an engine update is swapping the file
+            try {
+                YoutubeDL.getInstance().execute(request, job.id) { _, _, line -> onLine(job, line) }
+            } finally {
+                gate.readLock().unlock()
+            }
             finish(job)
         } catch (e: YoutubeDL.CanceledException) {
             settle(job, "cancelled", null)
@@ -395,14 +366,7 @@ class LocalEngine private constructor(private val app: Context) {
         }
 
         private const val TAG = "NamaoEngine"
-        private const val PREFS = "namao_engine"
-        private const val KEY_LAST_UPDATE = "last_update_ms"
-        private const val KEY_LAST_ATTEMPT = "last_update_attempt_ms"
-        private const val RETRY_AFTER_FAILURE_MS = 3L * 60 * 60 * 1000
-        private const val UPDATE_EVERY_MS = 24L * 60 * 60 * 1000
         private const val FIRST_UPDATE_LIMIT_SECONDS = 60L
-        private const val RELEASE_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
-        private const val MIN_YTDLP_BYTES = 1_000_000L
         private const val PROGRESS_PREFIX = "NAMAO_P "
         private const val DONE_PREFIX = "NAMAO_DONE "
         private const val OUTPUT_NAME = "media."

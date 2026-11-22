@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var pendingNotificationResult: MethodChannel.Result? = null
     private var engineChannel: EngineChannel? = null
+    private var updateChannel: AppUpdateChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -37,6 +38,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(messenger, CHANNEL)
             .setMethodCallHandler { call, result -> dispatch(call, result) }
         engineChannel = EngineChannel(this, messenger, LocalEngine.get(applicationContext))
+        updateChannel = AppUpdateChannel(this, messenger)
     }
 
     override fun onDestroy() {
@@ -47,6 +49,7 @@ class MainActivity : FlutterActivity() {
             stopService(Intent(this, TransferService::class.java))
             engineChannel?.close()
         }
+        updateChannel?.close()
         worker.shutdown()
         super.onDestroy()
     }

@@ -5,17 +5,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart' show addTearDown;
 import 'package:namao_app/data/providers.dart';
+import 'package:namao_app/data/updates/update_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes.dart';
+import 'update_fakes.dart';
 
 /// Everything a controller or widget test needs: fakes wired in, real SharedPreferences mock.
+/// The update fakes start quiet (downloader just checked, no newer app), so tests that are not
+/// about updating never see an update.
 class TestHarness {
   TestHarness._({
     required this.api,
     required this.media,
     required this.prefs,
     required this.overrides,
+    required this.engineUpdates,
+    required this.releases,
+    required this.apkBytes,
+    required this.installer,
   });
 
   static Future<TestHarness> create({
@@ -23,6 +31,10 @@ class TestHarness {
     ThemeMode? themeMode,
     FakeApi? api,
     FakeNativeMedia? media,
+    FakeEngineUpdateSource? engineUpdates,
+    FakeReleaseSource? releases,
+    FakeApkByteSource? apkBytes,
+    FakeApkInstaller? installer,
   }) async {
     SharedPreferences.setMockInitialValues({
       ...prefsValues,
@@ -31,12 +43,24 @@ class TestHarness {
     final prefs = await SharedPreferences.getInstance();
     final fakeApi = api ?? FakeApi();
     final fakeMedia = media ?? FakeNativeMedia();
+    final fakeEngineUpdates = engineUpdates ?? FakeEngineUpdateSource();
+    final fakeReleases = releases ?? FakeReleaseSource();
+    final fakeBytes = apkBytes ?? FakeApkByteSource();
+    final fakeInstaller = installer ?? FakeApkInstaller();
     var keyCounter = 0;
     return TestHarness._(
       api: fakeApi,
       media: fakeMedia,
       prefs: prefs,
+      engineUpdates: fakeEngineUpdates,
+      releases: fakeReleases,
+      apkBytes: fakeBytes,
+      installer: fakeInstaller,
       overrides: [
+        engineUpdateSourceProvider.overrideWithValue(fakeEngineUpdates),
+        appReleaseSourceProvider.overrideWithValue(fakeReleases),
+        apkByteSourceProvider.overrideWithValue(fakeBytes),
+        apkInstallerProvider.overrideWithValue(fakeInstaller),
         sharedPreferencesProvider.overrideWithValue(prefs),
         apiProvider.overrideWithValue(fakeApi),
         nativeMediaProvider.overrideWithValue(fakeMedia),
@@ -50,6 +74,10 @@ class TestHarness {
   final FakeNativeMedia media;
   final SharedPreferences prefs;
   final List<Override> overrides;
+  final FakeEngineUpdateSource engineUpdates;
+  final FakeReleaseSource releases;
+  final FakeApkByteSource apkBytes;
+  final FakeApkInstaller installer;
 
   ProviderContainer container() {
     final container = ProviderContainer(overrides: overrides);
@@ -57,7 +85,10 @@ class TestHarness {
     return container;
   }
 
-  void dispose() => api.dispose();
+  void dispose() {
+    api.dispose();
+    installer.dispose();
+  }
 }
 
 /// Polls [condition] on the real event loop until it holds (or fails the test after [timeout]).

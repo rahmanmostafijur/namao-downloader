@@ -89,12 +89,13 @@ void main() {
       addTearDown(h.dispose);
       await pumpNamao(tester, h);
       await openSettings(tester);
+      // Checked before scrolling: the list builds lazily, and the Updates section sits between.
+      expect(find.text('Saved to Downloads/Namao'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.textContaining('Version'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('Saved to Downloads/Namao'), findsOneWidget);
       expect(find.textContaining('does not bypass logins'), findsOneWidget);
       expect(find.text('Version 1.0.0 (1)'), findsOneWidget);
       expect(find.text('Open-source licenses'), findsOneWidget);
