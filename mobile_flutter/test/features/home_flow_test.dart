@@ -83,11 +83,11 @@ void main() {
     await pumpNamao(tester, h);
     await tester.enterText(find.byType(TextField), 'https://vimeo.com/123');
     await settle(tester);
-    expect(find.textContaining("doesn't look like YouTube"), findsOneWidget);
+    expect(find.textContaining("not supported yet"), findsOneWidget);
     expect(_buttonEnabled(tester, 'Get formats'), isFalse);
     await tester.tap(find.byTooltip('Clear'));
     await settle(tester);
-    expect(find.textContaining("doesn't look like YouTube"), findsNothing);
+    expect(find.textContaining("not supported yet"), findsNothing);
   });
 
   testWidgets(

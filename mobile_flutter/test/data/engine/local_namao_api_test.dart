@@ -4,9 +4,39 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:namao_app/core/api/api_exception.dart';
 import 'package:namao_app/core/models/job_status.dart';
+import 'package:namao_app/data/engine/link_resolver.dart';
 import 'package:namao_app/data/engine/local_engine.dart';
 import 'package:namao_app/data/engine/local_namao_api.dart';
 import 'package:namao_app/data/engine/progress_tracker.dart';
+import 'package:namao_app/data/session/cookie_file.dart';
+import 'package:namao_app/data/session/instagram_session_store.dart';
+
+class FakeSessions implements InstagramSessionStore {
+  FakeSessions(this.stored);
+
+  SessionInfo? stored;
+
+  @override
+  Future<SessionInfo?> info() async => stored;
+
+  @override
+  Future<String?> pickFile() async => null;
+
+  @override
+  Future<void> save(InstagramCookies cookies) async {}
+
+  @override
+  Future<void> remove() async => stored = null;
+}
+
+class FakeFetcher implements RedirectFetcher {
+  FakeFetcher(this.redirects);
+
+  final Map<String, String?> redirects;
+
+  @override
+  Future<String?> locationOf(Uri url) async => redirects[url.toString()];
+}
 
 class FakeEngine implements LocalEngine {
   final List<String> calls = [];
@@ -30,21 +60,41 @@ class FakeEngine implements LocalEngine {
     return version;
   }
 
+  String? lastRunSession;
+  final Map<String, String?> startedSessions = {};
+
+  /// Thrown only by a run that carries the user's session (Instagram answers a stale one with 401).
+  Object? runErrorWithSession;
+
   @override
-  Future<String> run(String url, List<String> options) async {
+  Future<String> run(
+    String url,
+    List<String> options, {
+    String? session,
+  }) async {
     calls.add('run $url');
     lastRunOptions = options;
+    lastRunSession = session;
+    if (session != null && runErrorWithSession != null) {
+      throw runErrorWithSession!;
+    }
     final error = runError;
     if (error != null) throw error;
     return runOutput;
   }
 
   @override
-  Future<void> start(String jobId, String url, List<String> options) async {
+  Future<void> start(
+    String jobId,
+    String url,
+    List<String> options, {
+    String? session,
+  }) async {
     calls.add('start $jobId');
     final error = startError;
     if (error != null) throw error;
     startedOptions[jobId] = options;
+    startedSessions[jobId] = session;
   }
 
   @override
@@ -603,6 +653,153 @@ void main() {
       final error = await thrown(api.metadata('https://youtu.be/abc'));
 
       expect(error.code, 'extractor_broken');
+    });
+  });
+
+  group('Facebook and Instagram links', () {
+    LocalNamaoApi build({
+      SessionInfo? session,
+      Map<String, String?>? redirects,
+    }) => LocalNamaoApi(
+      engine: engine,
+      newId: () => 'job-${++ids}',
+      now: () => DateTime(2026, 11, 23),
+      allowAnyLink: false,
+      sessions: FakeSessions(session),
+      resolver: LinkResolver(fetcher: FakeFetcher(redirects ?? {})),
+    );
+
+    const loginWall =
+        'ERROR: [instagram:story] 357: You need to log in to access this content. Use '
+        '--cookies-from-browser or --cookies for the authentication.';
+    final validSession = SessionInfo(expiresAt: DateTime(2027, 1, 1));
+    final expiredSession = SessionInfo(expiresAt: DateTime(2026, 6, 1));
+
+    test(
+      'a short link is resolved first and the engine gets the real video link',
+      () async {
+        final shortApi = build(
+          redirects: {
+            'https://fb.watch/abc/':
+                'https://www.facebook.com/reel/1195289147628387',
+          },
+        );
+        engine.runOutput = infoLines();
+        await shortApi.metadata('https://fb.watch/abc/');
+        expect(
+          engine.calls,
+          contains('run https://www.facebook.com/reel/1195289147628387'),
+        );
+        expect(engine.calls.any((c) => c.contains('fb.watch')), isFalse);
+      },
+    );
+
+    test(
+      'a link that cannot be resolved fails as that, never as unsupported',
+      () async {
+        final error = await thrown(build().metadata('https://fb.watch/abc/'));
+        expect(error.code, 'link_unresolved');
+        expect(engine.calls.where((c) => c.startsWith('run')), isEmpty);
+      },
+    );
+
+    test('the Instagram session is used for Instagram links only', () async {
+      final withSession = build(session: validSession);
+      engine.runOutput = infoLines();
+      await withSession.metadata('https://www.instagram.com/reel/CxAbCdEfGhI/');
+      expect(engine.lastRunSession, 'instagram');
+      await withSession.metadata('https://www.facebook.com/watch/?v=1');
+      expect(engine.lastRunSession, isNull);
+      await withSession.metadata('https://www.youtube.com/watch?v=abc');
+      expect(engine.lastRunSession, isNull);
+    });
+
+    test('without a session nothing is attached, and downloads follow the same rule', () async {
+      final anonymous = build();
+      engine.runOutput = infoLines();
+      await anonymous.metadata('https://www.instagram.com/reel/CxAbCdEfGhI/');
+      expect(engine.lastRunSession, isNull);
+      final job = await build(session: validSession).createDownload(
+        'https://www.instagram.com/reel/CxAbCdEfGhI/',
+        'best',
+        'key-1',
+      );
+      expect(engine.startedSessions[job.id], 'instagram');
+    });
+
+    test(
+      'an Instagram login wall asks for a session, naming the real cause',
+      () async {
+        engine.runError = const LocalEngineException('run_failed', loginWall);
+        final error = await thrown(
+          build().metadata('https://www.instagram.com/stories/someone/357/'),
+        );
+        expect(error.code, 'instagram_login_required');
+        expect(error.message, 'This content requires an Instagram session.');
+      },
+    );
+
+    test(
+      'an expired stored session is not sent and the failure says it expired',
+      () async {
+        engine.runError = const LocalEngineException('run_failed', loginWall);
+        final error = await thrown(
+          build(session: expiredSession)
+              .metadata('https://www.instagram.com/stories/someone/357/'),
+        );
+        expect(engine.lastRunSession, isNull);
+        expect(error.code, 'instagram_session_expired');
+      },
+    );
+
+    test('a session Instagram rejects never breaks a public post', () async {
+      engine.runErrorWithSession = const LocalEngineException(
+        'run_failed',
+        'ERROR: [Instagram] CDUMkliABpa: Video info extraction failed: HTTP Error 401: Unauthorized',
+      );
+      engine.runOutput = infoLines();
+      const reel = 'https://www.instagram.com/reel/CDUMkliABpa/';
+      final withStale = build(session: validSession);
+      final metadata = await withStale.metadata(reel);
+      expect(metadata.formats, isNotEmpty);
+      expect(
+        engine.calls.where((c) => c.startsWith('run')),
+        hasLength(2),
+        reason: 'first with the session, then once without it',
+      );
+      expect(engine.lastRunSession, isNull);
+      final job = await withStale.createDownload(reel, 'best', 'key-stale');
+      expect(
+        engine.startedSessions[job.id],
+        isNull,
+        reason: 'the download does not send the rejected session either',
+      );
+    });
+
+    test('a session that does not help a login-only link ends in the session message', () async {
+      engine.runErrorWithSession = const LocalEngineException(
+        'run_failed',
+        loginWall,
+      );
+      engine.runError = const LocalEngineException('run_failed', loginWall);
+      final error = await thrown(
+        build(session: validSession)
+            .metadata('https://www.instagram.com/stories/someone/357/'),
+      );
+      expect(error.code, 'instagram_session_expired');
+      expect(error.message, isNot(contains('unsupported')));
+    });
+
+    test('a login wall on another site is not blamed on Instagram', () async {
+      engine.runError = const LocalEngineException(
+        'run_failed',
+        'ERROR: [youtube] x: Sign in to confirm your age',
+      );
+      final error = await thrown(
+        build(session: validSession)
+            .metadata('https://www.youtube.com/watch?v=abc'),
+      );
+      expect(error.code, 'auth_required');
     });
   });
 

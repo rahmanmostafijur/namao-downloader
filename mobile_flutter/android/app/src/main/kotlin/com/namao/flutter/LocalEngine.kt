@@ -34,6 +34,9 @@ class LocalEngine private constructor(private val app: Context) {
     private val gate = ReentrantReadWriteLock()
     private val updates = EngineUpdates(app, gate) { readVersion() }
 
+    /** The optional Instagram session; see [SessionVault]. */
+    val sessions = SessionVault(app)
+
     @Volatile
     private var initialized = false
 
@@ -71,6 +74,7 @@ class LocalEngine private constructor(private val app: Context) {
                     throw EngineException("init_failed", e.message ?: e.javaClass.simpleName)
                 }
                 updates.recover()
+                sessions.wipeTemp() // decrypted copies a crashed run may have left
                 initialized = true
                 refreshOnFirstRun()
             }
@@ -127,23 +131,47 @@ class LocalEngine private constructor(private val app: Context) {
     // ------------------------------------------------------------------- metadata
 
     /** Runs yt-dlp with [args] against [url] and returns its standard output. */
-    fun run(url: String, args: List<String>): String {
+    fun run(url: String, args: List<String>, session: String? = null): String {
         requireWebUrl(url)
         ensureReady()
-        val request = YoutubeDLRequest(url).addCommands(args)
-        gate.readLock().lock() // an engine update waits for this to finish, never the reverse
-        try {
-            return YoutubeDL.getInstance().execute(request, null, null).out
-        } catch (e: YoutubeDLException) {
-            throw EngineException("run_failed", e.message ?: "")
-        } finally {
-            gate.readLock().unlock()
+        return withSession(url, session) { cookieArgs ->
+            val request = YoutubeDLRequest(url).addCommands(args).addCommands(cookieArgs)
+            gate.readLock().lock() // an engine update waits for this to finish, never the reverse
+            try {
+                YoutubeDL.getInstance().execute(request, null, null).out
+            } catch (e: YoutubeDLException) {
+                throw EngineException("run_failed", e.message ?: "")
+            } finally {
+                gate.readLock().unlock()
+            }
         }
+    }
+
+    /**
+     * The user's Instagram cookies are handed to yt-dlp only for an Instagram link, only when they
+     * asked for it, and only as a decrypted temp copy that is wiped when the run ends.
+     */
+    private fun <T> withSession(url: String, session: String?, block: (List<String>) -> T): T {
+        val cookies = if (session == "instagram" && isInstagramUrl(url)) sessions.materialize() else null
+        try {
+            return block(if (cookies == null) emptyList() else listOf("--cookies", cookies.absolutePath))
+        } finally {
+            cookies?.let { sessions.discard(it) }
+        }
+    }
+
+    private fun isInstagramUrl(url: String): Boolean {
+        val host = try {
+            java.net.URI(url).host?.lowercase()
+        } catch (e: Exception) {
+            null
+        } ?: return false
+        return host == "instagram.com" || host.endsWith(".instagram.com")
     }
 
     // ------------------------------------------------------------------ downloads
 
-    fun start(jobId: String, url: String, args: List<String>) {
+    fun start(jobId: String, url: String, args: List<String>, session: String? = null) {
         requireWebUrl(url)
         ensureReady()
         require(jobId.matches(JOB_ID)) { "bad job id" }
@@ -151,7 +179,7 @@ class LocalEngine private constructor(private val app: Context) {
         val job = JobState(jobId, dir)
         if (jobs.putIfAbsent(jobId, job) != null) return // a repeat of the same start
         try {
-            pool.execute { download(job, url, args) }
+            pool.execute { download(job, url, args, session) }
         } catch (e: RuntimeException) {
             jobs.remove(jobId) // never leave a job "running" that has no thread behind it
             dir.deleteRecursively()
@@ -163,7 +191,7 @@ class LocalEngine private constructor(private val app: Context) {
     private fun requireWebUrl(url: String) =
         require(url.startsWith("https://") || url.startsWith("http://")) { "not a web link" }
 
-    private fun download(job: JobState, url: String, args: List<String>) {
+    private fun download(job: JobState, url: String, args: List<String>, session: String?) {
         try {
             if (job.state != "running") return // cancelled before the process could start
             // The location and the machine-readable progress/result lines are this class's contract
@@ -180,11 +208,13 @@ class LocalEngine private constructor(private val app: Context) {
                     "-o", "$OUTPUT_NAME%(ext)s",
                 ),
             )
-            gate.readLock().lock() // blocks only while an engine update is swapping the file
-            try {
-                YoutubeDL.getInstance().execute(request, job.id) { _, _, line -> onLine(job, line) }
-            } finally {
-                gate.readLock().unlock()
+            withSession(url, session) { cookieArgs ->
+                gate.readLock().lock() // blocks only while an engine update is swapping the file
+                try {
+                    YoutubeDL.getInstance().execute(request.addCommands(cookieArgs), job.id) { _, _, line -> onLine(job, line) }
+                } finally {
+                    gate.readLock().unlock()
+                }
             }
             finish(job)
         } catch (e: YoutubeDL.CanceledException) {

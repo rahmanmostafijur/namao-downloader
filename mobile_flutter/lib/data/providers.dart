@@ -9,6 +9,7 @@ import 'engine/local_namao_api.dart';
 import 'file_saver.dart';
 import 'history_store.dart';
 import 'native_media.dart';
+import 'session/instagram_session_store.dart';
 import 'settings_store.dart';
 
 /// Overridden in `main()` after SharedPreferences is opened.
@@ -58,9 +59,17 @@ class SettingsController extends Notifier<AppSettings> {
   }
 }
 
+/// The user's optional Instagram session (their own cookies.txt, encrypted on this phone).
+final instagramSessionStoreProvider = Provider<InstagramSessionStore>(
+  (ref) => const MethodChannelInstagramSessionStore(),
+);
+
 /// The downloader every screen uses: it runs on this phone.
 final apiProvider = Provider<NamaoApi>(
-  (ref) => LocalNamaoApi(engine: ref.watch(localEngineProvider)),
+  (ref) => LocalNamaoApi(
+    engine: ref.watch(localEngineProvider),
+    sessions: ref.watch(instagramSessionStoreProvider),
+  ),
 );
 
 final fileSaverProvider = Provider<FileSaver>(

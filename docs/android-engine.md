@@ -52,6 +52,40 @@ Limits: the checksum and the file come from the same GitHub release, so this gua
 truncation, not against a compromised release. The stable channel is used; switch `RELEASE_URL` to the
 nightly builds if sites break faster than stable releases land.
 
+## Facebook, Instagram and the optional Instagram session
+
+**Why Facebook Reels were "unsupported".** The engine is restricted to single-video extractors with
+`--use-extractors`. yt-dlp matches those patterns (case-insensitively, whole name) against each extractor's
+`IE_NAME`, not its class name. The old list named class keys, so `FacebookReel` (`facebook:reel`),
+`YoutubeClip` (`youtube:clip`) and `TikTokVM` (`vm.tiktok`) matched nothing and their links failed with
+"No suitable extractor", which was reported as an unsupported site. `tests/test_extractor_allowlist.py` now
+checks every pattern, in both the Dart app and the Python server, against the installed yt-dlp.
+
+**Redirect-style links.** `fb.watch`, Facebook `/share/v|r|p/` and Instagram `/share/…` links are HTTP redirects
+that only yt-dlp's generic extractor would follow, and that extractor stays disabled. `LinkResolver`
+(`lib/data/engine/link_resolver.dart`) follows them instead, under strict rules: at most 5 hops, HTTPS only, every
+hop must stay on the same platform's own hosts (no look-alike domains, credentials or odd ports), and a hop to a
+login page is reported as such. `/reels/<id>` is rewritten to `/reel/<id>`, `instagr.am` to `www.instagram.com`.
+
+**Instagram.** Public Reels, posts and videos download without any login. Stories, and posts that are private,
+removed or rate-limited, do not: Instagram answers all of the ambiguous cases with the same "empty media
+response", so Namao says "Instagram didn't return this content" and does not claim a login is the cause. The
+message "This content requires an Instagram session." is shown only when yt-dlp itself says a login is needed.
+
+**Optional session (Settings > Instagram session).** The user picks their own Netscape-format `cookies.txt` with
+Android's system file picker. Namao keeps only the `instagram.com` lines (everything else in a browser export is
+discarded), requires a login (`sessionid`) cookie that has not expired, and stores it encrypted with an
+Android Keystore AES-GCM key in app-private, backup-excluded storage (`SessionVault.kt`). It is decrypted into a
+private temp file only for the length of one yt-dlp run on an Instagram link, then overwritten and deleted. It is
+never uploaded or logged, and Namao never asks for a password. **Sessions expire** and Instagram can end one at any
+time; Remove session deletes the file and the key. If Instagram rejects a stored session (it answers HTTP 401
+rather than treating the request as anonymous) the link is read again without it, so a stale session never breaks a
+public post.
+
+**Facebook login walls.** For a private, removed or login-walled video the Facebook extractor prints only
+"Cannot parse data" (unchanged in the latest stable yt-dlp, 2026.10.26), so the app reports "This content is
+unavailable or you don't have access to it." Facebook sessions are not supported.
+
 ## Known risks
 
 - Python and QuickJS start slowly on the test emulator (about two minutes for the first link). Not measured
@@ -59,7 +93,11 @@ nightly builds if sites break faster than stable releases land.
 - 16 KB-page-size devices: upstream issue #365 (some WebP libraries inside the FFmpeg bundle are 4 KB-aligned)
   can crash FFmpeg's first use there. Check it before targeting Android 15+ devices with 16 KB pages.
 - Swiping the app away stops a running download (it shows as Interrupted, with Retry).
-- Only YouTube was exercised on a device. Other sites use the same engine but are untested.
+- On a device (emulator) YouTube, Facebook (watch and Reel links) and Instagram (public Reels) were exercised with real
+  downloads; TikTok and X were not. A real `fb.watch` or `/share/` link was not available to test, so redirect
+  resolution is covered by unit tests with a scripted fetcher, not by a live success. No real Instagram account
+  session was available either: import, storage, encryption, removal and rejection handling were tested with synthetic
+  cookie files only.
 - Size: per-ABI APKs are about 55 MB (armeabi-v7a), 62 MB (arm64-v8a) and 65 MB (x86_64); a universal APK is
   about 155 MB. The release workflow builds and publishes the arm64-v8a APK only
   (`flutter build apk --release --target-platform android-arm64`), so it will not install on 32-bit-only phones

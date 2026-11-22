@@ -5,7 +5,7 @@ enum SourcePlatform {
   facebook('Facebook', ['facebook.com', 'fb.watch', 'fb.com']),
   tiktok('TikTok', ['tiktok.com']),
   twitter('X / Twitter', ['twitter.com', 'x.com']),
-  instagram('Instagram', ['instagram.com']);
+  instagram('Instagram', ['instagram.com', 'instagr.am']);
 
   const SourcePlatform(this.label, this.hosts);
 
@@ -22,8 +22,9 @@ enum SourcePlatform {
   }
 }
 
-const String unsupportedLinkMessage =
-    "That link doesn't look like YouTube, Facebook, TikTok, X/Twitter or Instagram.";
+/// Shown only for a link whose host belongs to none of the supported sites. A supported site's
+/// link that fails later is reported by what actually went wrong, never as "unsupported".
+const String unsupportedLinkMessage = 'This link is not supported yet.';
 
 const String incompleteLinkMessage = 'Paste a complete video link.';
 
@@ -66,8 +67,54 @@ class VideoUrlCheck {
 /// Always false in normal builds.
 const bool kAllowAnyLink = bool.fromEnvironment('NAMAO_ALLOW_ANY_LINK');
 
+final RegExp _leadingWrapper = RegExp(r'''^[<(\["']+''');
+final RegExp _trailingPunctuation = RegExp(r'''[.,;:!?'")\]}>”’]+$''');
+
+/// The link inside text pasted from a chat or caption: surrounding whitespace, wrapping quotes or
+/// brackets and sentence punctuation after the link are dropped; the link itself (path, query,
+/// fragment) is untouched.
+String cleanLink(String raw) => raw
+    .trim()
+    .replaceFirst(_leadingWrapper, '')
+    .replaceFirst(_trailingPunctuation, '');
+
+bool _isHostOrSubdomain(String host, String domain) =>
+    host == domain || host.endsWith('.$domain');
+
+/// Rewrites a recognised link to the form the downloader understands, changing nothing else
+/// (query and fragment survive). Facebook's `/reels/<id>` is the reel page that `/reel/<id>`
+/// serves; `instagr.am` is Instagram's retired short domain for the same paths.
+Uri normalizeSourceUrl(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (_isHostOrSubdomain(host, 'instagr.am')) {
+    return uri.replace(host: 'www.instagram.com');
+  }
+  if (_isHostOrSubdomain(host, 'facebook.com')) {
+    final reel = RegExp(r'^/reels/(\d+)/?$').firstMatch(uri.path);
+    if (reel != null) return uri.replace(path: '/reel/${reel.group(1)}');
+  }
+  return uri;
+}
+
+/// True for links that are HTTP redirects to the real video (fb.watch, Facebook and Instagram
+/// "share" links). The downloader reads canonical pages only and never follows arbitrary
+/// redirects itself, so these are resolved first (see `LinkResolver`).
+bool needsRedirectResolution(Uri uri) {
+  final host = uri.host.toLowerCase();
+  if (_isHostOrSubdomain(host, 'fb.watch')) return true;
+  final isShare = uri.path.startsWith('/share/');
+  return isShare &&
+      (_isHostOrSubdomain(host, 'facebook.com') ||
+          _isHostOrSubdomain(host, 'instagram.com'));
+}
+
+/// Plain web links only: no embedded credentials and no unusual port (those are how look-alike
+/// links disguise their real destination).
+bool _hasSafeAuthority(Uri uri) =>
+    uri.userInfo.isEmpty && (!uri.hasPort || uri.port == 80 || uri.port == 443);
+
 VideoUrlCheck checkVideoUrl(String raw, {bool allowAnyHost = kAllowAnyLink}) {
-  final text = raw.trim();
+  final text = cleanLink(raw);
   if (text.isEmpty) return const VideoUrlCheck();
   if (text.contains(RegExp(r'\s'))) {
     return const VideoUrlCheck(error: incompleteLinkMessage);
@@ -78,7 +125,8 @@ VideoUrlCheck checkVideoUrl(String raw, {bool allowAnyHost = kAllowAnyLink}) {
   if (uri == null ||
       uri.host.isEmpty ||
       (!allowAnyHost && !uri.host.contains('.')) ||
-      (scheme != 'http' && scheme != 'https')) {
+      (scheme != 'http' && scheme != 'https') ||
+      (!allowAnyHost && !_hasSafeAuthority(uri))) {
     return const VideoUrlCheck(error: incompleteLinkMessage);
   }
   final platform = detectPlatform(withScheme);
@@ -86,5 +134,9 @@ VideoUrlCheck checkVideoUrl(String raw, {bool allowAnyHost = kAllowAnyLink}) {
   if (platform == null) {
     return const VideoUrlCheck(error: unsupportedLinkMessage);
   }
-  return VideoUrlCheck(url: withScheme, platform: platform);
+  final normalized = normalizeSourceUrl(uri);
+  return VideoUrlCheck(
+    url: identical(normalized, uri) ? withScheme : normalized.toString(),
+    platform: platform,
+  );
 }

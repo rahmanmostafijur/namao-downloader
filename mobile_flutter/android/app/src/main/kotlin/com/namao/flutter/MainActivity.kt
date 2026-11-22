@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var pendingNotificationResult: MethodChannel.Result? = null
     private var engineChannel: EngineChannel? = null
+    private var sessionChannel: SessionChannel? = null
     private var updateChannel: AppUpdateChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -37,8 +38,17 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, CHANNEL)
             .setMethodCallHandler { call, result -> dispatch(call, result) }
-        engineChannel = EngineChannel(this, messenger, LocalEngine.get(applicationContext))
+        val engine = LocalEngine.get(applicationContext)
+        engineChannel = EngineChannel(this, messenger, engine)
+        sessionChannel = SessionChannel(this, messenger, engine.sessions)
         updateChannel = AppUpdateChannel(this, messenger)
+    }
+
+    @Deprecated("The Flutter embedding still delivers activity results here")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (sessionChannel?.onActivityResult(requestCode, resultCode, data) == true) return
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onDestroy() {
@@ -50,6 +60,7 @@ class MainActivity : FlutterActivity() {
             engineChannel?.close()
         }
         updateChannel?.close()
+        sessionChannel?.close()
         worker.shutdown()
         super.onDestroy()
     }

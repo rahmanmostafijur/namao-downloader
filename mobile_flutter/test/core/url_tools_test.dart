@@ -59,6 +59,116 @@ void main() {
       expect(result.error, unsupportedLinkMessage);
     });
 
+    test('every Facebook link form is recognised', () {
+      const urls = [
+        'https://www.facebook.com/watch/?v=740370353488040',
+        'https://facebook.com/watch?v=1',
+        'https://m.facebook.com/watch/?v=1',
+        'https://web.facebook.com/watch/?v=1',
+        'https://mbasic.facebook.com/story.php?story_fbid=1&id=2',
+        'https://www.facebook.com/somepage/videos/123456789/',
+        'https://www.facebook.com/reel/123456789',
+        'https://www.facebook.com/reels/123456789',
+        'https://www.facebook.com/share/v/1AbCdEfGhI/',
+        'https://www.facebook.com/share/r/1AbCdEfGhI/',
+        'https://fb.watch/abcDEF12_x/',
+        'http://www.facebook.com/watch/?v=1',
+        'FACEBOOK.COM/watch/?v=1',
+      ];
+      for (final url in urls) {
+        final result = checkVideoUrl(url);
+        expect(result.isValid, isTrue, reason: url);
+        expect(result.platform, SourcePlatform.facebook, reason: url);
+      }
+    });
+
+    test('every Instagram link form is recognised', () {
+      const urls = [
+        'https://www.instagram.com/reel/CxAbCdEfGhI/',
+        'https://www.instagram.com/reels/CxAbCdEfGhI/',
+        'https://www.instagram.com/p/CxAbCdEfGhI/',
+        'https://www.instagram.com/tv/CxAbCdEfGhI/',
+        'https://www.instagram.com/stories/someone/1234567890/',
+        'https://www.instagram.com/share/reel/BAbCdEfGh/',
+        'https://m.instagram.com/p/CxAbCdEfGhI/',
+        'https://instagram.com/p/CxAbCdEfGhI/',
+        'https://instagr.am/p/CxAbCdEfGhI/',
+      ];
+      for (final url in urls) {
+        final result = checkVideoUrl(url);
+        expect(result.isValid, isTrue, reason: url);
+        expect(result.platform, SourcePlatform.instagram, reason: url);
+      }
+    });
+
+    test('look-alike and disguised hosts are not accepted', () {
+      const urls = [
+        'https://facebook.com.example.org/watch/?v=1',
+        'https://www.facebook.com.evil.example/reel/1',
+        'https://notfacebook.com/watch/?v=1',
+        'https://fb.watch.example.org/abc',
+        'https://example.org/?u=https://www.facebook.com/watch/?v=1',
+        'https://instagram.com.example.org/p/x/',
+        'https://www.facebook.com@evil.example/watch/?v=1',
+        'https://user:pw@www.facebook.com/watch/?v=1',
+        'https://www.facebook.com:8443/watch/?v=1',
+      ];
+      for (final url in urls) {
+        expect(checkVideoUrl(url).isValid, isFalse, reason: url);
+      }
+      expect(
+        checkVideoUrl('https://facebook.com.example.org/watch/?v=1').error,
+        unsupportedLinkMessage,
+      );
+    });
+
+    test('trailing punctuation and wrappers are dropped, queries are kept', () {
+      expect(
+        checkVideoUrl('(https://www.facebook.com/watch/?v=1&t=30).').url,
+        'https://www.facebook.com/watch/?v=1&t=30',
+      );
+      expect(
+        checkVideoUrl('"https://fb.watch/abc/",').url,
+        'https://fb.watch/abc/',
+      );
+      expect(
+        checkVideoUrl('https://www.instagram.com/reel/Cx/?igsh=abc123!').url,
+        'https://www.instagram.com/reel/Cx/?igsh=abc123',
+      );
+    });
+
+    test('links are rewritten only where the downloader needs it', () {
+      expect(
+        checkVideoUrl('https://www.facebook.com/reels/123456789?s=x').url,
+        'https://www.facebook.com/reel/123456789?s=x',
+      );
+      expect(
+        checkVideoUrl('https://instagr.am/p/CxAbCdEfGhI/?igsh=1').url,
+        'https://www.instagram.com/p/CxAbCdEfGhI/?igsh=1',
+      );
+      expect(
+        checkVideoUrl('https://m.facebook.com/watch/?v=1').url,
+        'https://m.facebook.com/watch/?v=1',
+        reason: 'mobile hosts are left alone: the downloader handles them',
+      );
+    });
+
+    test(
+      'redirect-style links are flagged for resolving, canonical ones are not',
+      () {
+        bool flagged(String u) => needsRedirectResolution(Uri.parse(u));
+        expect(flagged('https://fb.watch/abc/'), isTrue);
+        expect(flagged('https://www.facebook.com/share/v/1Ab/'), isTrue);
+        expect(flagged('https://m.facebook.com/share/r/1Ab/'), isTrue);
+        expect(flagged('https://www.instagram.com/share/reel/Bx/'), isTrue);
+        expect(flagged('https://www.facebook.com/watch/?v=1'), isFalse);
+        expect(flagged('https://www.facebook.com/reel/1'), isFalse);
+        expect(flagged('https://www.instagram.com/reel/Cx/'), isFalse);
+        expect(flagged('https://youtu.be/abc'), isFalse);
+        expect(flagged('https://example.org/share/v/1'), isFalse);
+      },
+    );
+
     test('garbage and multi-word text are incomplete links', () {
       expect(checkVideoUrl('hello world').error, incompleteLinkMessage);
       expect(checkVideoUrl('notaurl').error, incompleteLinkMessage);

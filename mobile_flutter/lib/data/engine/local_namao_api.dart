@@ -11,8 +11,10 @@ import '../../core/models/video_metadata.dart';
 import '../../core/url_tools.dart';
 import '../../core/uuid.dart';
 import '../file_saver.dart' show safeDisplayName;
+import '../session/instagram_session_store.dart';
 import 'error_classifier.dart';
 import 'format_builder.dart';
+import 'link_resolver.dart';
 import 'local_engine.dart';
 import 'progress_tracker.dart';
 import 'ytdlp_options.dart';
@@ -24,10 +26,19 @@ const int _metadataCacheSize = 20;
 
 /// What this class remembers about a download it started in this process.
 class _Tracked {
-  _Tracked({required this.tracker, this.title});
+  _Tracked({
+    required this.tracker,
+    this.title,
+    this.isInstagram = false,
+    this.hasSession = false,
+  });
 
   final ProgressTracker tracker;
   final String? title;
+
+  /// What an Instagram failure is judged against: was a session stored when this started?
+  final bool isInstagram;
+  final bool hasSession;
 
   /// The final record, kept so a finished job never depends on the native side again.
   Job? terminal;
@@ -42,10 +53,17 @@ class LocalNamaoApi implements NamaoApi {
     String Function()? newId,
     DateTime Function()? now,
     this._allowAnyLink = kAllowAnyLink,
+    LinkResolver? resolver,
+    this._sessions,
   }) : _newId = newId ?? newUuid,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _resolver = resolver ?? LinkResolver();
 
   final LocalEngine _engine;
+  final LinkResolver _resolver;
+
+  /// The user's optional Instagram session; null in builds and tests without one.
+  final InstagramSessionStore? _sessions;
   final String Function() _newId;
   final DateTime Function() _now;
   final bool _allowAnyLink;
@@ -88,15 +106,9 @@ class LocalNamaoApi implements NamaoApi {
   @override
   Future<VideoMetadata> metadata(String url) async {
     await prepare();
-    final String output;
-    try {
-      output = await _engine.run(
-        url,
-        metadataOptions(allowAnyLink: _allowAnyLink),
-      );
-    } on LocalEngineException catch (error) {
-      throw _fromEngineError(error, metadataPhase: true);
-    }
+    final target = await _resolve(url);
+    final session = await _sessionFor(target);
+    final output = await _readLink(target, session);
     final info = RawInfo.parse(output);
     if (info == null) {
       _log('unreadable metadata output', output);
@@ -113,6 +125,48 @@ class LocalNamaoApi implements NamaoApi {
     );
     _remember(url, result);
     return result;
+  }
+
+  /// Links where the stored Instagram session made a run fail but reading them without it worked.
+  /// Instagram answers a session it no longer accepts with an error (HTTP 401) instead of treating
+  /// the request as anonymous, so a stale session would otherwise break public posts. These links
+  /// are read, and later downloaded, without the session.
+  final Set<String> _withoutSession = {};
+
+  /// The video's facts, using the stored session when there is one, and falling back to a plain
+  /// anonymous read once if that fails.
+  Future<String> _readLink(
+    String target,
+    ({bool isInstagram, bool exists, bool use}) session,
+  ) async {
+    final options = metadataOptions(allowAnyLink: _allowAnyLink);
+    try {
+      return await _engine.run(
+        target,
+        options,
+        session: session.use ? 'instagram' : null,
+      );
+    } on LocalEngineException catch (error) {
+      final engineDown =
+          error.code == 'unavailable' || error.code == 'init_failed';
+      if (!session.use || engineDown) {
+        throw _fromEngineError(error, metadataPhase: true, session: session);
+      }
+      _log('read with session failed; retrying without it', error.message);
+      try {
+        final output = await _engine.run(target, options);
+        _withoutSession.add(target);
+        return output;
+      } on LocalEngineException catch (anonymous) {
+        // Without the session it fails too: that failure is the real answer (for example a story
+        // that needs a login), judged knowing a session exists.
+        throw _fromEngineError(
+          anonymous,
+          metadataPhase: true,
+          session: session,
+        );
+      }
+    }
   }
 
   void _remember(String url, VideoMetadata metadata) {
@@ -140,16 +194,21 @@ class LocalNamaoApi implements NamaoApi {
     final known = _metadata[url];
     final format = _formatFor(known, quality);
     final id = _newId();
+    final target = await _resolve(url);
+    final session = await _sessionFor(target);
     try {
       await _engine.start(
         id,
-        url,
+        target,
         downloadOptions(parsed, allowAnyLink: _allowAnyLink),
+        session: session.use ? 'instagram' : null,
       );
     } on LocalEngineException catch (error) {
-      throw _fromEngineError(error, metadataPhase: false);
+      throw _fromEngineError(error, metadataPhase: false, session: session);
     }
     _jobs[id] = _Tracked(
+      isInstagram: session.isInstagram,
+      hasSession: session.exists,
       title: known?.title,
       tracker: ProgressTracker(
         // A video that carries no audio of its own is fetched as two streams, then merged. Unknown
@@ -276,6 +335,8 @@ class LocalNamaoApi implements NamaoApi {
           status.error ?? '',
           metadataPhase: false,
           engineStale: _engineIsStale,
+          isInstagram: tracked.isInstagram,
+          hasSession: tracked.hasSession,
         );
         _log('download failed (${failure.code})', status.error ?? '');
         return job(
@@ -369,6 +430,18 @@ class LocalNamaoApi implements NamaoApi {
 
   // --------------------------------------------------------------------- errors
 
+  /// fb.watch and share links lead to the real video through redirects; everything else is
+  /// returned as it is. A link that cannot be followed fails here with its own reason, never as
+  /// an "unsupported link".
+  Future<String> _resolve(String url) async {
+    try {
+      return await _resolver.resolve(url);
+    } on LinkResolveException catch (error) {
+      _log('link not resolved (${error.code})', url);
+      throw _failure(error.code, retryable: error.code == 'network_transient');
+    }
+  }
+
   ApiException _failure(String code, {bool retryable = false, int? status}) =>
       ApiException(
         code: code,
@@ -377,9 +450,34 @@ class LocalNamaoApi implements NamaoApi {
         status: status,
       );
 
+  /// Whether this is an Instagram link, whether the user has a stored session, and whether it is
+  /// still usable (a session past its own expiry date is not sent; the failure then says so).
+  Future<({bool isInstagram, bool exists, bool use})> _sessionFor(
+    String url,
+  ) async {
+    if (detectPlatform(url) != SourcePlatform.instagram) {
+      return (isInstagram: false, exists: false, use: false);
+    }
+    SessionInfo? info;
+    try {
+      info = await _sessions?.info();
+    } on Object {
+      info = null; // storage trouble must never block a public link
+    }
+    return (
+      isInstagram: true,
+      exists: info != null,
+      use:
+          info != null &&
+          !info.isExpired(_now()) &&
+          !_withoutSession.contains(url),
+    );
+  }
+
   ApiException _fromEngineError(
     LocalEngineException error, {
     required bool metadataPhase,
+    ({bool isInstagram, bool exists, bool use})? session,
   }) {
     if (error.code == 'unavailable' || error.code == 'init_failed') {
       _log('engine unavailable', error.message);
@@ -389,6 +487,8 @@ class LocalNamaoApi implements NamaoApi {
       error.message,
       metadataPhase: metadataPhase,
       engineStale: _engineIsStale,
+      isInstagram: session?.isInstagram ?? false,
+      hasSession: session?.exists ?? false,
     );
     _log('engine error (${failure.code})', error.message);
     return _failure(failure.code, retryable: failure.retryable);

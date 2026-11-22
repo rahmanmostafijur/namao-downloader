@@ -36,14 +36,17 @@ from .tools import Toolchain, get_toolchain
 
 log = logging.getLogger("namao.engine")
 
-# Extractor *keys* (not URLs) yt-dlp may use. Single-video extractors only:
-# playlists/channels/search/user pages are intentionally excluded.
+# Extractors yt-dlp may use. Single-video extractors only: playlists/channels/search/user pages
+# are intentionally excluded. yt-dlp matches these (case-insensitive, whole-name regexes) against
+# each extractor's IE_NAME, NOT its class key: FacebookReel is "facebook:reel", TikTokVM is
+# "vm.tiktok", YoutubeClip is "youtube:clip". A pattern naming the class key matches nothing and
+# silently blocks that site's links as "unsupported" (tests/test_extractor_allowlist.py guards it).
 _ALLOWED_EXTRACTORS = (
-    r"^Youtube$", r"^YoutubeYtBe$", r"^YoutubeClip$",
-    r"^Facebook$", r"^FacebookReel$", r"^FacebookRedirectURL$", r"^FacebookPluginsVideo$",
-    r"^TikTok$", r"^TikTokVM$",
+    r"^youtube$", r"^YoutubeYtBe$", r"^youtube:clip$",
+    r"^facebook$", r"^facebook:reel$", r"^FacebookRedirectURL$", r"^FacebookPluginsVideo$",
+    r"^TikTok$", r"^vm\.tiktok$",
     r"^Instagram$", r"^InstagramIOS$",
-    r"^Twitter$",
+    r"^twitter$",
 )
 _TEST_GENERIC_EXTRACTOR = (r"^Generic$",)
 _MAX_LOGGED_WARNINGS = 20

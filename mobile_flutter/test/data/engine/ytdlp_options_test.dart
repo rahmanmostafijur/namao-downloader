@@ -46,9 +46,17 @@ void main() {
     test('is restricted to the supported sites', () {
       final options = metadataOptions(allowAnyLink: false);
       final value = options[options.indexOf('--use-extractors') + 1];
-      expect(value, contains(r'^Youtube$'));
-      expect(value, contains(r'^TikTok$'));
+      // yt-dlp matches these against extractor IE_NAMEs ("facebook:reel"), not class keys
+      // ("FacebookReel"): a class-key pattern matches nothing and blocks that site's links.
+      expect(value, contains(r'^youtube$'));
+      expect(value, contains(r'^youtube:clip$'));
+      expect(value, contains(r'^facebook$'));
+      expect(value, contains(r'^facebook:reel$'));
+      expect(value, contains(r'^vm\.tiktok$'));
+      expect(value, contains(r'^instagram:story$'));
+      expect(value, isNot(contains(r'^FacebookReel$')));
       expect(value, isNot(contains('Generic')));
+      expect(value, isNot(contains('tab')), reason: 'no playlist extractors');
     });
 
     test('verification builds may skip the site restriction', () {

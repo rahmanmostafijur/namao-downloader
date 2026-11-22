@@ -1,20 +1,25 @@
 import '../../core/url_tools.dart';
 
-/// Single-video extractors only (same list as the Python server): playlists, channels and the
-/// generic "fetch any URL" extractor are never reachable. Regexes over yt-dlp extractor keys.
+/// Single-video extractors only: playlists, channels and the generic "fetch any URL" extractor
+/// are never reachable. yt-dlp matches these (case-insensitive, whole-name regexes) against each
+/// extractor's `IE_NAME`, NOT its class key: `FacebookReel` is `facebook:reel`, `TikTokVM` is
+/// `vm.tiktok`, `YoutubeClip` is `youtube:clip`. A pattern that names the class key matches
+/// nothing and silently blocks that site's links, so `tests/test_extractor_allowlist.py` checks
+/// every entry here against the installed yt-dlp. No pattern may contain a comma.
 const List<String> _allowedExtractors = [
-  r'^Youtube$',
+  r'^youtube$',
   r'^YoutubeYtBe$',
-  r'^YoutubeClip$',
-  r'^Facebook$',
-  r'^FacebookReel$',
+  r'^youtube:clip$',
+  r'^facebook$',
+  r'^facebook:reel$',
   r'^FacebookRedirectURL$',
   r'^FacebookPluginsVideo$',
   r'^TikTok$',
-  r'^TikTokVM$',
+  r'^vm\.tiktok$',
   r'^Instagram$',
+  r'^instagram:story$',
   r'^InstagramIOS$',
-  r'^Twitter$',
+  r'^twitter$',
 ];
 
 /// Preference order used for every download, the same as the server: resolution, frame rate,

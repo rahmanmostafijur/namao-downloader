@@ -31,12 +31,18 @@ const Map<String, String> _messages = {
   'invalid_quality': "That quality option isn't valid.",
   'file_too_large': 'This file is too large to download.',
   'video_unavailable':
-      'This video is unavailable. It may be private, deleted, or removed.',
-  'auth_required': "This video requires signing in. Namao can't download it without authorized access.",
+      "This content is unavailable or you don't have access to it.",
+  'auth_required': "This content requires you to be signed in, which Namao can't do for this site.",
+  'instagram_login_required': 'This content requires an Instagram session.',
+  'instagram_session_expired':
+      "Your Instagram session has expired or wasn't accepted.",
+  'instagram_unreachable': "Instagram didn't return this content. It may be private, removed, or need an Instagram session.",
+  'link_unresolved': "We couldn't open this link. Check it and try again.",
   'geo_restricted': "This video isn't available in your region.",
   'source_rate_limited':
-      'The site is limiting requests right now. Try again later.',
-  'access_blocked': 'The site refused the request from this connection.',
+      'The platform temporarily restricted access. Please try again later.',
+  'access_blocked':
+      'The platform temporarily restricted access. Please try again later.',
   'format_unavailable':
       "The selected quality isn't available. Pick another option.",
   'engine_outdated': 'Namao needs a quick refresh for this site.',
@@ -51,7 +57,8 @@ const Map<String, String> _messages = {
   'output_invalid': "The downloaded file couldn't be used. Please try again.",
   'storage_full':
       'Not enough free space on this phone. Free some up and retry.',
-  'metadata_failed': "Couldn't read this video's information.",
+  'metadata_failed':
+      "We couldn't prepare this download. Please try another link.",
   'download_failed': genericFailureMessage,
   'cancelled': 'The download was cancelled.',
   'interrupted': 'The download was interrupted. Tap Retry to start it again.',
@@ -68,6 +75,10 @@ const Map<String, String> _hints = {
   'expired': 'Use Retry to download it again from the source.',
   'auth_required':
       'Namao is for public videos only; it does not bypass logins.',
+  'instagram_login_required': 'If you are allowed to see it, add your own Instagram session in Settings.',
+  'instagram_session_expired':
+      'Import a fresh cookies.txt in Settings > Instagram session.',
+  'instagram_unreachable': 'If you are allowed to see it, add your own Instagram session in Settings.',
   'access_blocked': 'Try again later, or on a different network.',
   'engine_outdated': 'Connect to the internet and try again.',
   'environment_unsupported': 'Close Namao and open it again.',

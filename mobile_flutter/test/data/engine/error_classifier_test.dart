@@ -98,6 +98,91 @@ ERROR: [youtube] x: Video unavailable
     );
   });
 
+  // The wording below is what the real yt-dlp printed for these cases (2026.10.x).
+  group('Facebook and Instagram, from real extractor output', () {
+    const facebookWall =
+        'ERROR: [facebook] 100000000000001: Cannot parse data; please report this issue on '
+        ' https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template.';
+    const igEmpty =
+        'ERROR: [Instagram] ZZZZZZZZZZZ: Instagram sent an empty media response. Check if this '
+        'post is accessible in your browser without being logged-in. If it is not, then use '
+        '--cookies-from-browser or --cookies for the authentication.';
+    const igStory =
+        'ERROR: [instagram:story] 3570: You need to log in to access this content. Use '
+        '--cookies-from-browser or --cookies for the authentication.';
+    const igRate =
+        'ERROR: [Instagram] Cx: The webpage request was redirected to the login page. You have '
+        'exceeded the rate-limit for accessing posts anonymously. Use --cookies-from-browser or '
+        '--cookies for the authentication.';
+    const noExtractor =
+        'ERROR: No suitable extractor found for URL https://example.org/x';
+
+    test("Facebook's login-wall 'Cannot parse data' is unavailable, not unsupported", () {
+      expect(classify(facebookWall, metadata: true).code, 'video_unavailable');
+    });
+
+    test(
+      'Instagram stories ask for a session; an existing one is called expired',
+      () {
+        expect(
+          classifyEngineError(
+            igStory,
+            metadataPhase: true,
+            isInstagram: true,
+          ).code,
+          'instagram_login_required',
+        );
+        expect(
+          classifyEngineError(
+            igStory,
+            metadataPhase: true,
+            isInstagram: true,
+            hasSession: true,
+          ).code,
+          'instagram_session_expired',
+        );
+      },
+    );
+
+    test('the ambiguous empty response never claims a login is the cause', () {
+      for (final session in [false, true]) {
+        final failure = classifyEngineError(
+          igEmpty,
+          metadataPhase: true,
+          isInstagram: true,
+          hasSession: session,
+        );
+        expect(failure.code, 'instagram_unreachable');
+      }
+      expect(
+        classify(igEmpty, metadata: true).code,
+        isNot('unsupported_platform'),
+      );
+    });
+
+    test('anonymous rate limiting on Instagram is a temporary restriction', () {
+      final failure = classifyEngineError(
+        igRate,
+        metadataPhase: true,
+        isInstagram: true,
+      );
+      expect(failure.code, 'source_rate_limited');
+      expect(failure.retryable, isTrue);
+    });
+
+    test('only a link no extractor accepts is called unsupported', () {
+      expect(
+        classify(noExtractor, metadata: true).code,
+        'unsupported_platform',
+      );
+      expect(classify(facebookWall).code, isNot('unsupported_platform'));
+      expect(
+        classify('ERROR: something odd happened').code,
+        isNot('unsupported_platform'),
+      );
+    });
+  });
+
   group('anything unrecognised', () {
     test('falls back by phase without guessing a cause', () {
       expect(classify('something odd', metadata: true).code, 'metadata_failed');

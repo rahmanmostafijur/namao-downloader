@@ -77,10 +77,17 @@ abstract class LocalEngine {
   /// Unpacks the runtime on first launch and keeps yt-dlp current. Returns yt-dlp's version.
   Future<String> init();
 
-  /// Runs the tool once and returns what it printed.
-  Future<String> run(String url, List<String> options);
+  /// Runs the tool once and returns what it printed. [session] is `instagram` when the user's own
+  /// stored Instagram session should be used (the native side attaches it for Instagram links
+  /// only); the cookies themselves never pass through Dart again.
+  Future<String> run(String url, List<String> options, {String? session});
 
-  Future<void> start(String jobId, String url, List<String> options);
+  Future<void> start(
+    String jobId,
+    String url,
+    List<String> options, {
+    String? session,
+  });
 
   /// Null when the native side has no record of the job.
   Future<EngineStatus?> status(String jobId);
@@ -121,12 +128,31 @@ class MethodChannelLocalEngine implements LocalEngine {
   }
 
   @override
-  Future<String> run(String url, List<String> options) async =>
-      await _invoke<String>('run', {'url': url, 'args': options}) ?? '';
+  Future<String> run(
+    String url,
+    List<String> options, {
+    String? session,
+  }) async =>
+      await _invoke<String>('run', {
+        'url': url,
+        'args': options,
+        'session': session,
+      }) ??
+      '';
 
   @override
-  Future<void> start(String jobId, String url, List<String> options) async {
-    await _invoke<bool>('start', {'jobId': jobId, 'url': url, 'args': options});
+  Future<void> start(
+    String jobId,
+    String url,
+    List<String> options, {
+    String? session,
+  }) async {
+    await _invoke<bool>('start', {
+      'jobId': jobId,
+      'url': url,
+      'args': options,
+      'session': session,
+    });
   }
 
   @override

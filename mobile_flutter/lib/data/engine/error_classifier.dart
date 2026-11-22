@@ -65,6 +65,7 @@ const List<(String, List<String>)> _rules = [
       'rate-limited',
       'rate limited',
       'rate limit',
+      'rate-limit for accessing', // Instagram: "exceeded the rate-limit for accessing posts anonymously"
       'try again later',
     ],
   ),
@@ -119,6 +120,9 @@ const List<(String, List<String>)> _rules = [
       'http error 410',
       'post is unavailable',
       "page isn't available",
+      // Facebook's current answer to a private, removed or login-walled video: the page holds no
+      // video data and yt-dlp's extractor (unchanged in the latest stable) says only this.
+      'cannot parse data',
     ],
   ),
   (
@@ -201,8 +205,15 @@ EngineFailure classifyEngineError(
   String raw, {
   required bool metadataPhase,
   bool engineStale = false,
+  bool isInstagram = false,
+  bool hasSession = false,
 }) {
   final text = _errorText(raw);
+  // Instagram answers a deleted, private or rate-limited post with this same sentence, so it
+  // proves no single cause: say that, instead of claiming a login is the problem.
+  if (isInstagram && text.contains('empty media response')) {
+    return const EngineFailure('instagram_unreachable', retryable: false);
+  }
   for (final (code, markers) in _rules) {
     if (markers.any(text.contains)) {
       final upgraded =
@@ -210,7 +221,12 @@ EngineFailure classifyEngineError(
               (code == 'extractor_broken' || code == 'js_challenge_failed')
           ? 'engine_outdated'
           : code;
-      return EngineFailure(upgraded, retryable: _retryable.contains(upgraded));
+      final result = isInstagram && upgraded == 'auth_required'
+          ? (hasSession
+                ? 'instagram_session_expired'
+                : 'instagram_login_required')
+          : upgraded;
+      return EngineFailure(result, retryable: _retryable.contains(result));
     }
   }
   if (text.contains('http error 403') || text.contains('403: forbidden')) {

@@ -44,12 +44,17 @@ class EngineChannel(
 
     private fun dispatch(call: MethodCall): Any? = when (call.method) {
         "init" -> engine.init()
-        "run" -> engine.run(call.argument<String>("url")!!, call.argument<List<String>>("args")!!)
+        "run" -> engine.run(
+            call.argument<String>("url")!!,
+            call.argument<List<String>>("args")!!,
+            call.argument<String>("session"),
+        )
         "start" -> {
             engine.start(
                 call.argument<String>("jobId")!!,
                 call.argument<String>("url")!!,
                 call.argument<List<String>>("args")!!,
+                call.argument<String>("session"),
             )
             true
         }
